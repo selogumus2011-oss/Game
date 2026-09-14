@@ -23,6 +23,7 @@ export class Effects {
     this.decals = [];     // ground scars, blood pools, craters
     this.sprites = [];    // one-off symbols: kanji bursts, seals
     this.flashes = [];    // fullscreen colour flashes
+    this.impacts = [];    // manga impact frames (radial speed lines)
     this.quality = 1;     // 0.4 .. 1.4, scales particle counts
   }
 
@@ -36,6 +37,16 @@ export class Effects {
     this.decals.length = 0;
     this.sprites.length = 0;
     this.flashes.length = 0;
+    this.impacts.length = 0;
+  }
+
+  /** A manga impact frame: radial speed lines plus a colour wash. */
+  impact(strength, color, flash = true, time = 0.3) {
+    this.impacts.push({
+      life: time, max: time, strength, color, flash,
+      seed: rand() * TAU,
+    });
+    if (this.impacts.length > 4) this.impacts.shift();
   }
 
   // -------------------------------------------------------------------------
@@ -165,6 +176,7 @@ export class Effects {
         this.arc({ x: p.x, y: p.y, z, angle: (e.angle ?? 0) + PI, range: 1.2, arc: 0.9, color: '#dff0ff', life: 0.18, style: 'guard' });
         break;
       case 'parry':
+        this.impact(0.55, '#ffe9a0', false, 0.24);
         this.flash('#ffe9a0', 0.35, 0.16);
         this.ring({ x: p.x, y: p.y, z, r: 0.2, target: 4.5, life: 0.42, color: '#ffe9a0', width: 0.16, flat: false });
         this.ring({ x: p.x, y: p.y, z, r: 0.2, target: 2.6, life: 0.3, color: '#ffffff', width: 0.1, flat: false });
@@ -175,6 +187,7 @@ export class Effects {
         this.ring({ x: p.x, y: p.y, z, r: 1.4, target: 0.6, life: 0.2, color: '#ffd166', width: 0.06, flat: false, alpha: 0.7 });
         break;
       case 'guardBreak':
+        this.impact(0.6, '#ffb3b3', false, 0.26);
         this.flash('#ff6b6b', 0.25, 0.2);
         this.burst(p.x, p.y, z, 30, { color: '#ffb3b3', speedMax: 10, lifeMax: 0.8 });
         this.sprite({ x: p.x, y: p.y, z: z + 0.8, text: '崩', color: '#ff6b6b', size: 40, life: 0.8 });
@@ -185,6 +198,7 @@ export class Effects {
 
       // --- black flash ---------------------------------------------------
       case 'blackflash': {
+        this.impact(1, '#ff2d2d', true, 0.42);
         this.flash('#ff2d2d', 0.55, 0.3, 'invert');
         this.flash('#000000', 0.5, 0.22, 'multiply');
         this.ring({ x: p.x, y: p.y, z, r: 0.3, target: 9, life: 0.55, color: '#ff2d2d', width: 0.4, flat: false });
@@ -250,6 +264,7 @@ export class Effects {
         }
         break;
       case 'domainOpen':
+        this.impact(0.85, e.color || '#ffffff', true, 0.6);
         this.flash(e.color || '#ffffff', 0.5, 0.6);
         this.ring({ x: p.x, y: p.y, z: 0, r: 0.5, target: e.radius * 1.1, life: 1.0, color: e.color, width: 0.5, flat: true });
         this.ring({ x: p.x, y: p.y, z: 2, r: 0.5, target: e.radius, life: 0.9, color: '#ffffff', width: 0.3, flat: false });
@@ -435,6 +450,34 @@ export class Effects {
         this.sprite({ x: p.x + Math.cos(e.angle || 0) * 2.4, y: p.y + Math.sin(e.angle || 0) * 2.4, z: 2.2, text: e.text || '呪言', color: e.color || '#f0e6c8', size: 30, life: 0.9 });
         break;
 
+      case 'divergent':
+        this.ring({ x: p.x, y: p.y, z, r: 0.2, target: 2.6, life: 0.28, color: '#ff6b5a', width: 0.16, flat: false });
+        this.burst(p.x, p.y, z, 14, { color: '#ff6b5a', speedMax: 9, lifeMax: 0.4, glow: 1 });
+        break;
+      case 'arc':
+        this.bolt(e.from.x, e.from.y, e.z ?? 1, e.to.x, e.to.y, e.z ?? 1, {
+          color: '#ffe066', width: 0.08, life: 0.2, jag: 0.5, segments: 9,
+        });
+        break;
+      case 'copy':
+        this.ring({ x: p.x, y: p.y, z, r: 2.4, target: 0.3, life: 0.4, color: '#b0e8ff', width: 0.12, flat: false });
+        this.sprite({ x: p.x, y: p.y, z: z + 0.6, text: '模倣', color: '#b0e8ff', size: 24, life: 0.8 });
+        break;
+      case 'splash':
+        this.burst(p.x, p.y, z, 12, { color: '#6fd0e8', speedMax: 5, lifeMax: 0.4, glow: 0.6 });
+        break;
+      case 'plating':
+        this.burst(p.x, p.y, z, 8, { color: '#e8c46a', speedMax: 4, lifeMax: 0.35, kind: 'chunk', gravity: 12 });
+        break;
+      case 'reels':
+        this.sprite({ x: p.x, y: p.y, z, text: '7 7 7', color: '#ffd166', size: 26, life: 0.9 });
+        break;
+      case 'jackpot':
+        this.impact(0.9, '#ffd166', true, 0.5);
+        this.ring({ x: p.x, y: p.y, z: 0.05, r: 0.3, target: 9, life: 0.8, color: '#ffd166', width: 0.3, flat: true });
+        this.burst(p.x, p.y, 0.6, 70, { colors: ['#ffd166', '#ffffff', '#ff9f6b'], speedMax: 14, lifeMax: 1.4, glow: 1, gravity: 5 });
+        this.sprite({ x: p.x, y: p.y, z: z + 1.6, text: '大当たり', color: '#ffd166', size: 52, life: 1.4, style: 'flash' });
+        break;
       default:
         // Slash family and anything unrecognised: draw a crescent so new
         // techniques always look like something.
@@ -491,7 +534,7 @@ export class Effects {
       if (p.grow) p.size += p.grow * dt;
     }
 
-    for (const list of [this.arcs, this.rings, this.beams, this.bolts, this.numbers, this.sprites, this.flashes]) {
+    for (const list of [this.arcs, this.rings, this.beams, this.bolts, this.numbers, this.sprites, this.flashes, this.impacts]) {
       for (let i = list.length - 1; i >= 0; i--) {
         const o = list[i];
         o.life -= dt;

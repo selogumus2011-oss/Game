@@ -36,6 +36,10 @@ export function drawDomainFloor(ctx, cam, d, time) {
     case 'words': drawWordFloor(ctx, c, r, time, spec); break;
     case 'swarm': drawSwarmFloor(ctx, c, r, time, spec); break;
     case 'courtroom': drawCourtFloor(ctx, c, r, time, spec); break;
+    case 'ice': drawIceFloor(ctx, c, r, time, spec); break;
+    case 'love': drawLoveFloor(ctx, c, r, time, spec); break;
+    case 'pachinko': drawPachinkoFloor(ctx, c, r, time, spec); break;
+    case 'tide': drawTideFloor(ctx, c, r, time, spec); break;
     default: drawVoidFloor(ctx, c, r, time, spec); break;
   }
   ctx.restore();
@@ -324,6 +328,107 @@ function drawSwarmFloor(ctx, c, r, time, spec) {
     ctx.fillStyle = hexA(spec.color, 0.3);
     ctx.beginPath();
     ctx.ellipse(x, y, 4, 6, a, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/** Frozen Sanctuary: a lattice of ice shards growing out of the ground. */
+function drawIceFloor(ctx, c, r, time, spec) {
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 46; i++) {
+    const a = i * 2.399 + time * 0.05;
+    const d = ((i * 37) % 100) / 100 * r;
+    const x = c.x + Math.cos(a) * d;
+    const y = c.y + Math.sin(a) * d * FLATTEN;
+    const h = 14 + noise1(i * 0.9, 5) * 40;
+    const grow = clamp01((time * 0.6 + i * 0.13) % 2);
+    ctx.fillStyle = hexA('#a8e8ff', 0.26);
+    ctx.beginPath();
+    ctx.moveTo(x - 6, y);
+    ctx.lineTo(x, y - h * grow);
+    ctx.lineTo(x + 6, y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.strokeStyle = hexA('#d8f4ff', 0.14);
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    const rr = r * ((i + 1) / 6);
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, rr, rr * FLATTEN, 0, 0, TAU);
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/** Authentic Mutual Love: petals and a slow heartbeat pulse. */
+function drawLoveFloor(ctx, c, r, time, spec) {
+  ctx.globalCompositeOperation = 'lighter';
+  const beat = 0.5 + 0.5 * Math.pow(Math.abs(Math.sin(time * 1.6)), 4);
+  const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r);
+  g.addColorStop(0, hexA('#ff8ab0', 0.26 * beat));
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(c.x - r, c.y - r, r * 2, r * 2);
+  for (let i = 0; i < 34; i++) {
+    const a = i * 1.7 + time * 0.25;
+    const d = ((i * 29) % 100) / 100 * r;
+    const x = c.x + Math.cos(a) * d;
+    const y = c.y + Math.sin(a) * d * FLATTEN + Math.sin(time + i) * 6;
+    ctx.fillStyle = hexA('#ffb8d0', 0.35);
+    ctx.beginPath();
+    ctx.ellipse(x, y, 6, 3, a, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/** Idle Death Gamble: a pachinko field of pegs and falling balls. */
+function drawPachinkoFloor(ctx, c, r, time, spec) {
+  ctx.globalCompositeOperation = 'lighter';
+  const cols = 14, rows = 10;
+  for (let i = 0; i < cols; i++) {
+    for (let j = 0; j < rows; j++) {
+      const x = c.x + (i / (cols - 1) - 0.5) * r * 1.7;
+      const y = c.y + (j / (rows - 1) - 0.5) * r * 1.7 * FLATTEN + (i % 2) * 6;
+      if (Math.hypot(x - c.x, (y - c.y) / FLATTEN) > r) continue;
+      ctx.fillStyle = hexA('#ffd166', 0.2);
+      ctx.beginPath();
+      ctx.arc(x, y, 2.2, 0, TAU);
+      ctx.fill();
+    }
+  }
+  for (let i = 0; i < 24; i++) {
+    const phase = (time * (0.5 + (i % 4) * 0.18) + i * 0.21) % 1;
+    const x = c.x + ((i * 41) % 100 / 100 - 0.5) * r * 1.7;
+    const y = c.y - r * FLATTEN + phase * r * 2 * FLATTEN;
+    ctx.fillStyle = hexA('#ffffff', 0.5 * (1 - phase));
+    ctx.beginPath();
+    ctx.arc(x, y, 3.4, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/** Horizon of the Captivating Skandha: shallow water to every horizon. */
+function drawTideFloor(ctx, c, r, time, spec) {
+  for (let i = 0; i < 12; i++) {
+    const phase = (time * 0.25 + i / 12) % 1;
+    const rr = r * phase;
+    ctx.strokeStyle = hexA('#6fd0e8', 0.2 * (1 - phase));
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, rr, rr * FLATTEN, 0, 0, TAU);
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 30; i++) {
+    const a = i * 1.3 + time * 0.4;
+    const d = ((i * 23) % 100) / 100 * r;
+    ctx.fillStyle = hexA('#d8f8ff', 0.16);
+    ctx.beginPath();
+    ctx.ellipse(c.x + Math.cos(a) * d, c.y + Math.sin(a) * d * FLATTEN, 12, 2.4, a, 0, TAU);
     ctx.fill();
   }
   ctx.globalCompositeOperation = 'source-over';

@@ -5,6 +5,8 @@ import { clamp } from '../core/math.js';
 
 export const STATUS_META = {
   slow: { name: 'Slowed', color: '#7aa6d8', bad: true },
+  chilled: { name: 'Chilled', color: '#a8e8ff', bad: true },
+  jackpot: { name: 'JACKPOT', color: '#ffd166', bad: false },
   stun: { name: 'Stunned', color: '#ffd166', bad: true },
   frozen: { name: 'Frozen Frame', color: '#9fe870', bad: true },
   root: { name: 'Rooted', color: '#9aa3ad', bad: true },
@@ -76,6 +78,17 @@ export function updateStatuses(f, dt, world) {
       case 'slow':
         mods.speed -= clamp(s.power, 0, 0.95);
         break;
+      case 'chilled':
+        // Frost slows and makes the body easier to break.
+        mods.speed -= clamp(s.power, 0, 0.7);
+        mods.damageTaken += clamp(s.power * 0.4, 0, 0.4);
+        mods.attackSpeed -= clamp(s.power * 0.4, 0, 0.4);
+        break;
+      case 'jackpot':
+        // Unlimited reversal: the wound closes as fast as it opens.
+        mods.healingTaken += 1;
+        mods.reinforce += 0.1;
+        break;
       case 'stun':
       case 'frozen':
         f.actionLock = true;
@@ -139,6 +152,7 @@ export function updateStatuses(f, dt, world) {
         if (s.attackSpeed) mods.attackSpeed += s.attackSpeed;
         if (s.flashBand) mods.flashBand += s.flashBand;
         if (s.poise) mods.poiseMax += s.poise;
+        if (s.regen) f.heal(s.regen * dt, { rct: true, source: 'buff' });
         if (s.superArmor) f.actionFlags.superArmor = true;
         if (s.frameStep) f.actionFlags.frameStep = true;
         break;

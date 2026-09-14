@@ -12,6 +12,7 @@ import { Effects } from './render/effects.js';
 import { Hud } from './render/hud.js';
 import { UI } from './ui/menus.js';
 import { ROSTER, CHARACTERS } from './data/characters.js';
+import { TECHNIQUES } from './data/techniques.js';
 import { getArena } from './data/arenas.js';
 import { LOOT_TABLE } from './data/tools.js';
 
@@ -117,7 +118,12 @@ class Game {
         const foe = pool[Math.floor(Math.random() * pool.length)];
         const e = world.spawnSorcerer(foe, { team: 1, x: 0, y: -12 });
         e.facing = Math.PI / 2;
-        world.banner('一騎討ち', `${CHARACTERS[foe].name} — ${CHARACTERS[foe].title}`, CHARACTERS[foe].appearance.accent, 3);
+        const me = CHARACTERS[sel.character];
+        const them = CHARACTERS[foe];
+        this.hud.showVersus(
+          { name: me.name, title: me.title, technique: TECHNIQUES[me.technique].jp, color: me.appearance.accent },
+          { name: them.name, title: them.title, technique: TECHNIQUES[them.technique].jp, color: them.appearance.accent },
+        );
         break;
       }
       case 'culling': {
@@ -162,6 +168,9 @@ class Game {
     }
 
     this.renderer.initWeather(world.arena);
+    // The veil drops over the arena before the fight starts.
+    this.renderer.veilIntro = 2.1;
+    this.renderer.veilIntroMax = 2.1;
     this.camera.snapTo(p.pos.x, p.pos.y);
     this.camera.zoom = 1.6;
     this.state = 'playing';
@@ -353,6 +362,16 @@ class Game {
           size, weight, crit: !!ev.blackFlash || !!ev.crit,
         });
         if (ev.blackFlash && isPlayerAttacker) this.camera.punchZoom(0.22);
+      } else if (ev.type === 'domainCast') {
+        // Announce the expansion the moment the chant starts.
+        const caster = w.byId(ev.fighter);
+        const spec = caster?.domainSpec();
+        if (spec) {
+          this.hud.showDomainCutin({
+            jp: spec.jp, en: spec.name, chant: spec.chant,
+            color: spec.color, name: caster.name,
+          });
+        }
       } else if (ev.type === 'domainOpen') {
         this.camera.punchZoom(-0.14);
       } else if (ev.type === 'parry') {

@@ -209,6 +209,134 @@ export const CHARACTERS = {
     },
     traits: ['Damage scales with hits taken (Evidence)', 'Domain confiscates the enemy technique', 'Indicted targets stop regenerating cursed energy'],
   }),
+
+  // --- Second wave --------------------------------------------------------
+
+  vessel: C({
+    id: 'vessel', name: 'Yuji', title: 'Vessel of the King of Curses',
+    technique: 'divergentFist', tool: 'fists', grade: 1,
+    maxHp: 315, maxCe: 95, ceControl: 0.55, ceRegen: 7, speed: 1.16, power: 1.25,
+    weight: 1.02, reach: 1.0, poise: 135, rct: 0.25, domainSkill: 0,
+    quote: '"I do not know how I will die. But I want to die surrounded by people."',
+    desc: 'No inherited technique — just absurd physical stats and a fist that lands twice. The easiest character to land a Black Flash with, and the one the whole mechanic was designed around.',
+    appearance: {
+      hair: '#f0d0c0', hairStyle: 'spiky', skin: '#e8c0a0', eyes: '#e06a5a',
+      uniform: '#1a1d24', accent: '#ff6b5a', height: 1.06, build: 1.08,
+    },
+    traits: ['Every physical hit lands a delayed second impact', 'Widest Black Flash window in the roster', 'No domain — this is a fistfight'],
+  }),
+
+  cursedQueen: C({
+    id: 'cursedQueen', name: 'Yuta', title: 'Special Grade, Copy',
+    technique: 'copyTechnique', tool: 'katana', grade: 'special',
+    maxHp: 300, maxCe: 150, ceControl: 0.78, ceRegen: 9, speed: 1.1, power: 1.05,
+    weight: 1.0, reach: 1.15, poise: 118, rct: 0.65, domainSkill: 1.1,
+    quote: '"I am not scared of dying. I am scared of being alone."',
+    desc: 'Bottomless cursed energy and no technique of his own — he copies whatever hits him. The longer a fight runs, the more his kit looks like yours.',
+    appearance: {
+      hair: '#1c1c24', hairStyle: 'messy', skin: '#ecd0ba', eyes: '#b0e8ff',
+      uniform: '#141a22', accent: '#b0e8ff', height: 1.05, build: 0.98,
+    },
+    traits: ['Copies the last technique used against him', 'Cursed energy reserve that never runs out', 'Rika fights beside you as a special grade'],
+  }),
+
+  frostCook: C({
+    id: 'frostCook', name: 'Uraume', title: 'Frost Calm',
+    technique: 'iceFormation', tool: 'katana', grade: 'special',
+    maxHp: 275, maxCe: 128, ceControl: 0.84, ceRegen: 7.6, speed: 1.02, power: 1.05,
+    weight: 1.0, reach: 1.1, poise: 110, rct: 0.55, domainSkill: 1.1,
+    quote: '"It will be ready shortly."',
+    desc: 'Area denial and attrition. Everything near you is slowed and chilled, and chilled targets take more from every source — including your allies\' hits.',
+    appearance: {
+      hair: '#f4f4f8', hairStyle: 'bob', skin: '#f0e0d4', eyes: '#a8e8ff',
+      uniform: '#141c22', accent: '#a8e8ff', height: 1.02, build: 0.94,
+    },
+    traits: ['Passive frost aura slows and softens everything nearby', 'Immune to ice, resistant to heat', 'Absolute Zero freezes a wide circle outright'],
+  }),
+
+  gambler: C({
+    id: 'gambler', name: 'Hakari', title: 'Idle Death Gamble',
+    technique: 'idleDeathGamble', tool: 'fists', grade: 1,
+    maxHp: 330, maxCe: 118, ceControl: 0.62, ceRegen: 7.2, speed: 1.08, power: 1.2,
+    weight: 1.12, reach: 1.02, poise: 145, rct: 0.5, domainSkill: 1.0,
+    quote: '"Do not worry about the odds. Worry about the pay-out."',
+    desc: 'Builds a jackpot meter by dealing and taking damage. Hit the jackpot and you get unlimited reverse cursed technique — a window where you genuinely cannot be killed.',
+    appearance: {
+      hair: '#e8e8ea', hairStyle: 'slick', skin: '#e4c4a8', eyes: '#ffd166',
+      uniform: '#20180a', accent: '#ffd166', height: 1.12, build: 1.14,
+    },
+    traits: ['Damage dealt and taken both fill the reels', 'JACKPOT: 25 seconds of unlimited reversal', 'Domain forces the opponent to watch the reels'],
+  }),
+
+  starRager: C({
+    id: 'starRager', name: 'Yuki', title: 'Special Grade, Star Rage',
+    technique: 'starRage', tool: 'fists', grade: 'special',
+    maxHp: 305, maxCe: 120, ceControl: 0.7, ceRegen: 7, speed: 1.04, power: 1.3,
+    weight: 1.25, reach: 1.05, poise: 150, rct: 0.45, domainSkill: 0,
+    quote: '"The question is why cursed energy exists at all. Everything else is a stopgap."',
+    desc: 'Virtual mass stacks through a combo — every consecutive hit lands heavier than the last. Rewards long uninterrupted strings and punishes anyone who tries to trade.',
+    appearance: {
+      hair: '#f0c860', hairStyle: 'bun', skin: '#e8c4a4', eyes: '#c9a0ff',
+      uniform: '#1a1424', accent: '#c9a0ff', height: 1.1, build: 1.06,
+    },
+    traits: ['Combo length converts into knockback and guard damage', 'Gravity Well drags a whole group into one place', 'Infinite Mass Punch ends anyone at low health'],
+  }),
+
+  amber: C({
+    id: 'amber', name: 'Kashimo', title: 'Mythical Beast Amber',
+    technique: 'electricDischarge', tool: 'katana', grade: 'special',
+    maxHp: 265, maxCe: 130, ceControl: 0.74, ceRegen: 8, speed: 1.38, power: 1.1,
+    weight: 0.92, reach: 1.2, poise: 96, rct: 0.35, domainSkill: 0,
+    quote: '"Four hundred years and nobody has been worth the trouble. Try."',
+    desc: 'The fastest attacker in the game. Converts cursed energy directly into electricity, chains every hit to a second target, and does not care much about defence.',
+    appearance: {
+      hair: '#f0e8d0', hairStyle: 'wild', skin: '#d8b898', eyes: '#ffe066',
+      uniform: '#1d1a0e', accent: '#ffe066', height: 1.08, build: 0.98,
+    },
+    traits: ['Every hit arcs to a second enemy', 'Highest attack and movement speed', 'Overcharge costs health for even more speed'],
+  }),
+
+  tideCurse: C({
+    id: 'tideCurse', name: 'Dagon', title: 'Disaster Tide',
+    technique: 'disasterTides', tool: 'fists', grade: 'special',
+    maxHp: 320, maxCe: 135, ceControl: 0.68, ceRegen: 7.4, speed: 0.96, power: 1.15,
+    weight: 1.3, reach: 1.05, poise: 155, rct: 0.3, domainSkill: 1.05,
+    quote: '"..."',
+    desc: 'A wall of water absorbs half the damage from every projectile aimed at you, and the domain fills the arena with shikigami that cost nothing.',
+    appearance: {
+      hair: '#2a4a55', hairStyle: 'none', skin: '#5a8a96', eyes: '#d8f8ff',
+      uniform: '#0d2028', accent: '#6fd0e8', height: 1.12, build: 1.18,
+    },
+    traits: ['Projectiles lose half their force before they land', 'Free shikigami inside the domain', 'Undertow drags the whole group into melee'],
+  }),
+
+  builder: C({
+    id: 'builder', name: 'Yorozu', title: 'Perfect Construction',
+    technique: 'construction', tool: 'katana', grade: 'special',
+    maxHp: 285, maxCe: 122, ceControl: 0.8, ceRegen: 7.2, speed: 1.04, power: 1.12,
+    weight: 1.05, reach: 1.12, poise: 122, rct: 0.5, domainSkill: 0,
+    quote: '"I have built the perfect thing. It is shaped like you."',
+    desc: 'Turns cursed energy into steel plating that rebuilds itself between exchanges, then builds the weapon that suits this exact fight.',
+    appearance: {
+      hair: '#c8a860', hairStyle: 'braid', skin: '#eccfb4', eyes: '#e8c46a',
+      uniform: '#241c0e', accent: '#e8c46a', height: 1.04, build: 0.98,
+    },
+    traits: ['Self-rebuilding plating absorbs half of every hit', 'Perfect Blade rebuilds the plating instantly', 'Sublime Art drops a constructed sphere from the sky'],
+  }),
+
+  puppeteer: C({
+    id: 'puppeteer', name: 'Kokichi', title: 'Ultimate Mechamaru',
+    technique: 'puppetManipulation', tool: 'fists', grade: 1,
+    maxHp: 185, maxCe: 160, ceControl: 0.88, ceRegen: 10, speed: 0.9, power: 0.85,
+    weight: 0.85, reach: 1.4, poise: 70, rct: 0.3, domainSkill: 0,
+    quote: '"I traded my body for range. I would take the deal again."',
+    desc: 'The inverse of Heavenly Restriction: enormous cursed energy and the longest reach in the game, in a body that takes 30% extra damage. Fight from behind the puppets or do not fight at all.',
+    appearance: {
+      hair: '#3a4450', hairStyle: 'short', skin: '#d8d0c8', eyes: '#b8e8ff',
+      uniform: '#161c22', accent: '#9fb8c8', goggles: true, height: 0.98, build: 0.9,
+    },
+    traits: ['Huge cursed energy pool and +25% technique output', 'Takes 30% extra damage from everything', 'Puppets exist to be hit instead of you'],
+  }),
 };
 
 export const ROSTER = Object.keys(CHARACTERS);

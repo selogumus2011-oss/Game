@@ -19,6 +19,18 @@ export class Hud {
     this.comboShake = 0;
     this.showControls = true;
     this.controlsFade = 14;
+    this.cutin = null;   // domain expansion announcement
+    this.vs = null;      // opening name cards
+  }
+
+  /** The domain expansion announcement: split panels, calligraphy, the chant. */
+  showDomainCutin({ jp, en, chant, color, name, glyph }) {
+    this.cutin = { jp, en, chant, color, name, glyph: glyph || '領域展開', t: 2.6, max: 2.6 };
+  }
+
+  showVersus(left, right) {
+    // Delayed so the veil finishes falling before the cards slide in.
+    this.vs = { left, right, t: 3.0, max: 3.0, delay: 1.3 };
   }
 
   draw(ctx, world, cam, W, H, dt) {
@@ -45,10 +57,12 @@ export class Hud {
     this.drawBanners(ctx, world, W, H);
     this.drawMinimap(ctx, world, cam, W, H);
     this.drawStatuses(ctx, p, W, H);
-    if (this.controlsFade > 0) {
+    if (this.controlsFade > 0 && !this.vs && !this.cutin) {
       this.controlsFade -= dt;
       this.drawControlsHint(ctx, W, H, clamp01(this.controlsFade / 3));
     }
+    this.drawVersus(ctx, W, H, dt);
+    this.drawCutin(ctx, W, H, dt);
     if (world.over) this.drawResult(ctx, world, W, H);
 
     ctx.restore();
@@ -638,6 +652,136 @@ export class Hud {
       ctx.fillText(l, 28, y - 4);
       y += 15;
     }
+    ctx.restore();
+  }
+
+  /**
+   * Domain expansion cut-in. Two diagonal panels wipe in from opposite edges,
+   * the technique name lands between them, and the caster's line sits under it.
+   */
+  drawCutin(ctx, W, H, dt) {
+    const c = this.cutin;
+    if (!c) return;
+    c.t -= dt;
+    if (c.t <= 0) { this.cutin = null; return; }
+    const t = 1 - c.t / c.max;
+    const wipeIn = clamp01(t / 0.16);
+    const hold = clamp01((0.86 - t) / 0.14);
+    const a = Math.min(wipeIn, hold);
+    if (a <= 0) return;
+
+    const bandH = H * 0.24;
+    const cy = H * 0.40;
+    const skew = H * 0.09;
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    // Upper panel slides in from the left, lower from the right.
+    const offA = (1 - wipeIn) * -W;
+    const offB = (1 - wipeIn) * W;
+    const panel = (yTop, yBot, off, fill) => {
+      ctx.beginPath();
+      ctx.moveTo(off, yTop);
+      ctx.lineTo(off + W, yTop - skew);
+      ctx.lineTo(off + W, yBot - skew);
+      ctx.lineTo(off, yBot);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    };
+    panel(cy - bandH * 0.5, cy + bandH * 0.04, offA, 'rgba(6,7,11,0.93)');
+    panel(cy + bandH * 0.06, cy + bandH * 0.62, offB, 'rgba(6,7,11,0.86)');
+
+    // Accent rails.
+    ctx.strokeStyle = hexA(c.color, 0.9);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(offA, cy + bandH * 0.04);
+    ctx.lineTo(offA + W, cy + bandH * 0.04 - skew);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(offB, cy + bandH * 0.06);
+    ctx.lineTo(offB + W, cy + bandH * 0.06 - skew);
+    ctx.stroke();
+
+    // Text.
+    ctx.textAlign = 'center';
+    const push = (1 - wipeIn) * 40;
+    ctx.save();
+    ctx.translate(W / 2 + push, 0);
+    ctx.font = `900 13px ${FONT}`;
+    ctx.fillStyle = hexA(c.color, 0.85);
+    ctx.fillText(c.glyph + ' — DOMAIN EXPANSION', 0, cy - bandH * 0.3);
+    ctx.font = `900 ${Math.round(Math.min(72, W * 0.058))}px ${JP}`;
+    ctx.fillStyle = c.color;
+    ctx.shadowColor = c.color;
+    ctx.shadowBlur = 26;
+    ctx.fillText(c.jp, 0, cy - bandH * 0.02);
+    ctx.shadowBlur = 0;
+    ctx.font = `800 18px ${FONT}`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(c.en, 0, cy + bandH * 0.24);
+    if (c.chant) {
+      ctx.font = `500 italic 13px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillText(`"${c.chant}"`, 0, cy + bandH * 0.44);
+    }
+    if (c.name) {
+      ctx.font = `700 12px ${FONT}`;
+      ctx.fillStyle = hexA(c.color, 0.8);
+      ctx.fillText(c.name, 0, cy + bandH * 0.58);
+    }
+    ctx.restore();
+    ctx.restore();
+  }
+
+  /** Opening name cards, the way a fight is introduced on screen. */
+  drawVersus(ctx, W, H, dt) {
+    const v = this.vs;
+    if (!v) return;
+    if (v.delay > 0) { v.delay -= dt; return; }
+    v.t -= dt;
+    if (v.t <= 0) { this.vs = null; return; }
+    const t = 1 - v.t / v.max;
+    const inA = clamp01(t / 0.14);
+    const outA = clamp01((1 - t) / 0.2);
+    const a = Math.min(inA, outA);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.textAlign = 'left';
+
+    const cardH = 62;
+    const slideL = (1 - inA) * -320;
+    const slideR = (1 - inA) * 320;
+
+    const card = (side, who, y) => {
+      const x = side < 0 ? 40 + slideL : W - 40 - 360 + slideR;
+      ctx.fillStyle = 'rgba(6,7,11,0.86)';
+      roundRect(ctx, x, y, 360, cardH, 8);
+      ctx.fill();
+      ctx.fillStyle = who.color;
+      ctx.fillRect(side < 0 ? x : x + 356, y, 4, cardH);
+      ctx.font = `900 22px ${FONT}`;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(who.name, x + 16, y + 28);
+      ctx.font = `600 11px ${FONT}`;
+      ctx.fillStyle = hexA(who.color, 0.9);
+      ctx.fillText(who.title, x + 16, y + 44);
+      ctx.font = `600 10px ${JP}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.fillText(who.technique, x + 16, y + 57);
+    };
+
+    card(-1, v.left, H * 0.4 - cardH - 10);
+    card(1, v.right, H * 0.4 + 10);
+
+    ctx.textAlign = 'center';
+    ctx.font = `900 46px ${JP}`;
+    ctx.fillStyle = '#ff2d2d';
+    ctx.shadowColor = '#ff2d2d';
+    ctx.shadowBlur = 22;
+    ctx.globalAlpha = a * clamp01((t - 0.1) * 6);
+    ctx.fillText('対', W / 2, H * 0.4 + 12);
     ctx.restore();
   }
 

@@ -153,7 +153,7 @@ looks like the one you started in.
 
 ## Content
 
-**14 cursed techniques**, each with a passive that changes a rule, four
+**23 cursed techniques**, each with a passive that changes a rule, four
 abilities and (mostly) a domain:
 
 | Technique | Passive | Domain |
@@ -172,8 +172,17 @@ abilities and (mostly) a domain:
 | Projection Sorcery 投射呪法 | 24 frames — mistimed targets freeze for a second | — |
 | Cursed Spirit Manipulation 呪霊操術 | Absorbs every curse you kill | Chamber of Unknown Depths |
 | Deadly Sentencing 誅伏賜死 | Evidence — stronger every time you are hit | Deadly Sentencing (confiscates techniques) |
+| Divergent Fist 逕庭拳 | Every hit lands a second, delayed impact | — |
+| Copy 模倣 | Learns any technique that hits you | Authentic Mutual Love |
+| Ice Formation 氷凝呪法 | Frost aura slows and softens everything nearby | Frozen Sanctuary |
+| Idle Death Gamble 坐殺博徒 | Damage fills the reels; jackpot = unlimited reversal | Idle Death Gamble |
+| Star Rage 星の怒り | Virtual mass stacks through a combo | — |
+| Electric Discharge 雷 | Every hit arcs to a second target | — |
+| Disaster Tides 溢れる水 | A water wall halves incoming projectiles | Horizon of the Captivating Skandha |
+| Construction 構築術式 | Self-rebuilding steel plating | — |
+| Puppet Manipulation 傀儡操術 | Inverted Heavenly Restriction: huge reserve, fragile body | — |
 
-**14 playable sorcerers**, each a different body around those techniques, with
+**23 playable sorcerers**, each a different body around those techniques, with
 their own stat spread, silhouette and starting tool.
 
 **10 cursed tools** that rewrite your physical layer — Playful Cloud's guard
@@ -197,6 +206,32 @@ every phenomenon that touches it, including yours.
 lighting.
 
 ---
+
+## Presentation
+
+The look leans on the source material's own grammar rather than generic game
+feedback:
+
+- **The veil (帳)** falls over the arena before every fight.
+- **Opening name cards** introduce a duel, with both techniques named in kana.
+- **Domain Expansion cut-ins** — diagonal panels wipe in, the technique lands in
+  calligraphy, and the caster's chant sits underneath it. Every domain has one.
+- **Impact frames**: radial manga speed lines and a colour wash on Black Flash,
+  guard breaks, perfect parries and domain openings.
+- **Black Flash** inverts the screen, throws black lightning, scorches the
+  ground and stamps 黒閃 over the impact.
+
+Animation is a pose system rather than a single swing value. Each attack is
+driven by the body mechanic it actually uses — jab, cross, spin, rising kick,
+overhead, slam, palm, grab, claw — with anticipation, follow-through and a
+counter-balancing back arm. On top of that:
+
+- Hair, scarves and coat tails run on spring chains that lag behind the body.
+- Squash and stretch on takeoff and landing, with dust on the contact frames.
+- Hit recoil shoves and tilts the body away from whatever just landed.
+- Weapon trails sample the blade tip and draw a tapered ribbon along the arc.
+- Casting and reverse cursed technique have their own poses, with cursed energy
+  gathering visibly in the working palm.
 
 ## Architecture
 

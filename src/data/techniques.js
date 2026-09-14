@@ -11,6 +11,7 @@
 // }
 
 import { TAU, PI, vfromAngle, vadd, vdist, clamp } from '../core/math.js';
+import { EXTRA_TECHNIQUES } from './techniques-extended.js';
 
 // ---------------------------------------------------------------------------
 
@@ -104,6 +105,7 @@ export const TECHNIQUES = {
     domain: {
       id: 'unlimitedVoid', name: 'Unlimited Void', jp: '無量空処',
       desc: 'Infinite information — every possible perception, delivered at once and forever. The brain is handed too much to do and simply stops.',
+      chant: 'Show me everything. All of it, all at once.',
       radius: 13, duration: 11, integrity: 260, cost: 92, drain: 6.5, castTime: 1.25,
       visual: 'void', color: '#8ad8ff', color2: '#2a2a66',
       sureHit: { type: 'overload', dps: 13, slow: 0.88, stunLock: true, ceDrain: 9 },
@@ -173,6 +175,7 @@ export const TECHNIQUES = {
     domain: {
       id: 'chimeraShadowGarden', name: 'Chimera Shadow Garden', jp: '嵌合暗翳庭',
       desc: 'The shadow floods out and becomes the floor, the walls, the air. Inside it every shikigami is free and you can swim through the dark.',
+      chant: 'The shadow is deeper than anything you can stand on.',
       radius: 12, duration: 13, integrity: 220, cost: 88, drain: 5.5, castTime: 1.15,
       visual: 'shadowGarden', color: '#9f8fe8', color2: '#0b0713',
       sureHit: { type: 'shadowGrasp', dps: 9, slow: 0.55, snare: true },
@@ -252,6 +255,7 @@ export const TECHNIQUES = {
     domain: {
       id: 'malevolentShrine', name: 'Malevolent Shrine', jp: '伏魔御廚子',
       desc: 'A shrine of skulls with no walls. The barrier was traded away by binding vow — the sure-hit reaches everything within 140 metres instead.',
+      chant: 'I traded the barrier away. There is nowhere in here that is not the shrine.',
       radius: 17, duration: 10, integrity: 150, cost: 95, drain: 8, castTime: 1.35,
       visual: 'shrine', color: '#ff3b30', color2: '#140202', open: true,
       sureHit: { type: 'dismantleStorm', dps: 34, slow: 0.12, selfDamage: 0.15 },
@@ -273,8 +277,11 @@ export const TECHNIQUES = {
     passive: {
       name: 'Soul Perception', jp: '魂の形',
       desc: 'You see the shape of the soul. Your unarmed hits bypass a portion of reinforcement and inflict soul wounds that reverse cursed technique cannot easily mend.',
-      onOutgoingHit(ctx) {
+      onPreHit(ctx) {
+        // Must run before reinforcement is applied — you are not hitting the body.
         ctx.hit.ignoreReinforce = Math.max(ctx.hit.ignoreReinforce || 0, 0.45);
+      },
+      onOutgoingHit(ctx) {
         if (ctx.world.rng.chance(0.25)) ctx.world.addStatus(ctx.victim, { type: 'soulWound', time: 9, power: 0.14 });
       },
     },
@@ -320,6 +327,7 @@ export const TECHNIQUES = {
     domain: {
       id: 'selfEmbodiment', name: 'Self-Embodiment of Perfection', jp: '自閉円頓裹',
       desc: 'Your own soul, turned inside out and made into a room. Everything that enters is touched directly.',
+      chant: 'Come in. I will show you the shape you really are.',
       radius: 11.5, duration: 12, integrity: 200, cost: 90, drain: 6, castTime: 1.2,
       visual: 'soulPalace', color: '#8ef0bd', color2: '#101c17',
       sureHit: { type: 'soulStrike', dps: 16, ignoreReinforce: true, transfigure: true },
@@ -397,6 +405,7 @@ export const TECHNIQUES = {
     domain: {
       id: 'coffinOfTheIronMountain', name: 'Coffin of the Iron Mountain', jp: '蓋棺鉄囲山',
       desc: 'The inside of a volcano, sealed. There is no cool air left in the barrier.',
+      chant: 'There is no cool air left. Breathe anyway.',
       radius: 12.5, duration: 11, integrity: 210, cost: 90, drain: 6, castTime: 1.2,
       visual: 'volcano', color: '#ff7a1a', color2: '#2a0d00',
       sureHit: { type: 'incinerate', dps: 22, burn: true, blind: 0.4 },
@@ -472,6 +481,7 @@ export const TECHNIQUES = {
     domain: {
       id: 'seaOfBlood', name: 'Flowing Red Sea', jp: '流血の海',
       desc: 'The barrier fills with your blood and every drop of it is still yours to command.',
+      chant: 'Every drop in here is still mine.',
       radius: 11, duration: 10, integrity: 190, cost: 88, drain: 6, castTime: 1.15,
       visual: 'bloodSea', color: '#ff2d4f', color2: '#1a0308',
       sureHit: { type: 'exsanguinate', dps: 18, bleed: true, healOwner: 6 },
@@ -617,6 +627,7 @@ export const TECHNIQUES = {
     domain: {
       id: 'silentGrave', name: 'Domain: Cradle of Quiet Words', jp: '静語の揺籃',
       desc: 'Inside the barrier every word you speak is heard by the body directly, with nothing in between to refuse it.',
+      chant: 'In here, you hear me with your body.',
       radius: 11, duration: 10, integrity: 180, cost: 86, drain: 5.5, castTime: 1.1,
       visual: 'words', color: '#f0e6c8', color2: '#1a1710',
       sureHit: { type: 'compel', dps: 11, stunPulse: 2.4, throatFree: true },
@@ -981,6 +992,7 @@ export const TECHNIQUES = {
     domain: {
       id: 'wellsUnknown', name: 'Chamber of Unknown Depths', jp: '獄門の淵',
       desc: 'A pit with everything you have ever swallowed at the bottom of it, and no floor between them and the target.',
+      chant: 'Everything I ever swallowed is down there, and there is no floor.',
       radius: 12, duration: 11, integrity: 215, cost: 90, drain: 6, castTime: 1.2,
       visual: 'swarm', color: '#6fd4c4', color2: '#07110f',
       sureHit: { type: 'swarm', dps: 15, slow: 0.4, summonRate: 2.5 },
@@ -1046,6 +1058,7 @@ export const TECHNIQUES = {
     domain: {
       id: 'deadlySentencingDomain', name: 'Deadly Sentencing', jp: '誅伏賜死',
       desc: 'The barrier becomes a court. The judge is real, the sentence is binding, and the accused may plead.',
+      chant: 'The court is in session. You may plead.',
       radius: 12, duration: 12, integrity: 230, cost: 92, drain: 6, castTime: 1.3,
       visual: 'courtroom', color: '#cfa8ff', color2: '#100a1a',
       sureHit: { type: 'verdict', dps: 10, confiscate: true, sentence: 5 },
@@ -1055,10 +1068,15 @@ export const TECHNIQUES = {
   },
 };
 
+// The second wave lives in its own module purely for file size.
+Object.assign(TECHNIQUES, EXTRA_TECHNIQUES);
+
 export const PLAYABLE_TECHNIQUES = [
   'limitless', 'tenShadows', 'shrine', 'idleTransfiguration', 'disasterFlames',
   'bloodManipulation', 'heavenlyRestriction', 'cursedSpeech', 'ratio',
   'boogieWoogie', 'strawDoll', 'projectionSorcery', 'spiritManipulation', 'deadlySentencing',
+  'divergentFist', 'copyTechnique', 'iceFormation', 'idleDeathGamble', 'starRage',
+  'electricDischarge', 'disasterTides', 'construction', 'puppetManipulation',
 ];
 
 export function getTechnique(id) {

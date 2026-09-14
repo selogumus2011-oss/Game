@@ -20,7 +20,7 @@ export const TOOLS = {
     weight: 1.45, power: 1.6, reach: 1.3, poiseMul: 1.9,
     flashBand: -0.01, grade: 1, color: '#e8c46a', shape: 'staff', length: 1.9,
     special: 'Enormous guard damage. Breaks blocks and props outright.',
-    onHit(ctx) { ctx.hit.poise *= 1.5; },
+    onPreHit(ctx) { ctx.hit.poise *= 1.5; },
   },
   invertedSpear: {
     id: 'invertedSpear', name: 'Inverted Spear of Heaven', jp: '天逆鉾',

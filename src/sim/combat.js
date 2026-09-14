@@ -198,6 +198,14 @@ export function dealDamage(world, attacker, victim, hitIn) {
     }
   }
 
+  // 6b. Attacker passives get their say *before* the numbers are computed.
+  //     This is where soul-piercing, mass accumulation and similar rules live;
+  //     onOutgoingHit at the end of the pipeline is too late to change damage.
+  if (attacker?.technique?.passive?.onPreHit) {
+    attacker.technique.passive.onPreHit({ world, self: attacker, victim, hit, dt: world.dt });
+  }
+  if (attacker?.tool?.onPreHit) attacker.tool.onPreHit({ world, self: attacker, victim, hit });
+
   // 7. Reinforcement.
   const ignore = clamp01(hit.ignoreReinforce || 0);
   const reinforce = reinforcement(victim) * (1 - ignore) * (hit.reinforceMul ?? 1);

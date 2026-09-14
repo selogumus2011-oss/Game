@@ -17,6 +17,7 @@ import { addStatus } from './status.js';
 import { getArena } from '../data/arenas.js';
 import { getCurse, GRADE_POWER, WAVE_TABLE } from '../data/curses.js';
 import { getCharacter } from '../data/characters.js';
+import { getTechnique } from '../data/techniques.js';
 import { ACTIONS } from '../data/actions.js';
 import { getTool, LOOT_TABLE, TOOL_LIST } from '../data/tools.js';
 
@@ -638,6 +639,7 @@ export class World {
   after(delay, fn) { this.timers.push({ t: delay, fn }); }
 
   addStatus(f, status) { return addStatus(f, status); }
+  techniqueById(id) { return getTechnique(id); }
   removeStatus(f, type) { if (f) f.removeStatus(type); }
 
   executeAbility(caster, ability, aim) {

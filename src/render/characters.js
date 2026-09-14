@@ -132,7 +132,8 @@ export { hexA };
 
 // --- main entry -------------------------------------------------------------
 
-export function drawFighter(ctx, cam, f, time) {
+export function drawFighter(ctx, cam, f, time, dt = 1 / 60, fx = null) {
+  updateRig(f, dt, cam, fx);
   const base = cam.project(f.pos.x, f.pos.y, f.z);
   const s = cam.scale;
   const hpx = s * HEIGHT;
@@ -165,10 +166,13 @@ export function drawFighter(ctx, cam, f, time) {
     case 'hanged': drawWraith(ctx, f, hpx, time, true); break;
     case 'special': drawSpecialGrade(ctx, f, hpx, time); break;
     case 'mahoraga': drawMahoraga(ctx, f, hpx, time); break;
-    case 'transfigured': drawHuman(ctx, f, hpx, time, { patchwork: true }); break;
+    case 'transfigured': drawHuman(ctx, f, hpx, time, { patchwork: true }, cam); break;
     case 'isomer': drawIsomer(ctx, f, hpx, time); break;
-    case 'decoy': drawHuman(ctx, f, hpx, time, { ghost: true }); break;
-    default: drawHuman(ctx, f, hpx, time, {}); break;
+    case 'rika': drawRika(ctx, f, hpx, time); break;
+    case 'fish': drawFish(ctx, f, hpx, time); break;
+    case 'puppet': drawPuppet(ctx, f, hpx, time); break;
+    case 'decoy': drawHuman(ctx, f, hpx, time, { ghost: true }, cam); break;
+    default: drawHuman(ctx, f, hpx, time, {}, cam); break;
   }
 
   // Eye glow: one additive blit per fighter reads as well as a per-eye blur
@@ -194,43 +198,185 @@ export function drawFighter(ctx, cam, f, time) {
   ctx.restore();
 }
 
+// --- animation rig ----------------------------------------------------------
+//
+// Per-fighter presentation state: secondary motion for hair and cloth, hit
+// recoil, squash and stretch, and the weapon trail. The simulation never reads
+// any of this — it exists purely so bodies move like bodies.
+
+function rigOf(f) {
+  if (!f.anim.rig) {
+    f.anim.rig = {
+      hair: { x: 0, y: 0, vx: 0, vy: 0 },
+      cloth: [{ x: 0, y: 0, vx: 0, vy: 0 }, { x: 0, y: 0, vx: 0, vy: 0 }],
+      recoil: 0, recoilDir: 0,
+      squash: 1, squashV: 0,
+      prevVz: 0, wasAir: false,
+      weaponTrail: [],
+      blink: 0, blinkT: 1 + (f.id % 7) * 0.6,
+      spin: 0,
+      lastAction: null,
+      step: 0, lastStepPhase: 0,
+    };
+  }
+  return f.anim.rig;
+}
+
+/** Spring a point toward a target — the whole of the secondary motion model. */
+function spring(p, tx, ty, stiffness, damping, dt) {
+  p.vx += (tx - p.x) * stiffness * dt;
+  p.vy += (ty - p.y) * stiffness * dt;
+  const d = Math.exp(-damping * dt);
+  p.vx *= d;
+  p.vy *= d;
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+}
+
+export function updateRig(f, dt, cam, fx) {
+  const rig = rigOf(f);
+  const step = Math.min(dt, 1 / 30);
+  const s = cam.scale;
+  const dir = Math.cos(f.facing) >= 0 ? 1 : -1;
+
+  // Hair and cloth lag behind the body and settle under gravity.
+  const velLocal = -f.vel.x * dir * 0.9;
+  const airLift = f.vz * 0.35;
+  spring(rig.hair, velLocal * 0.02, 0.02 + airLift * 0.012, 120, 11, step);
+  spring(rig.cloth[0], velLocal * 0.03, 0.05 + airLift * 0.02, 90, 9, step);
+  spring(rig.cloth[1], rig.cloth[0].x * 1.3, rig.cloth[0].y * 1.2 + 0.03, 70, 8, step);
+
+  // Hit recoil: a short shove away from whatever just landed.
+  if (f.timeSinceHit < 0.02) {
+    rig.recoil = Math.min(1, rig.recoil + 0.9);
+    rig.recoilDir = Math.atan2(f.vel.y, f.vel.x);
+  }
+  rig.recoil = Math.max(0, rig.recoil - step * 5);
+
+  // Squash and stretch around jumps and landings.
+  const inAir = f.z > 0.12;
+  let squashTarget = 1;
+  if (inAir) squashTarget = 1 + Math.max(-0.12, Math.min(0.14, f.vz * 0.016));
+  if (rig.wasAir && !inAir) {
+    rig.squashV = -Math.min(9, Math.abs(rig.prevVz) * 0.7);
+    if (fx && Math.abs(rig.prevVz) > 4) {
+      const p = cam.project(f.pos.x, f.pos.y, 0);
+      fx.burst(f.pos.x, f.pos.y, 0.04, 6, {
+        color: '#8a8a7a', speedMax: 3, lifeMax: 0.35, kind: 'smoke', sizeMax: 0.2, gravity: 2,
+      });
+    }
+  }
+  rig.wasAir = inAir;
+  rig.prevVz = f.vz;
+  rig.squashV += (squashTarget - rig.squash) * 90 * step;
+  rig.squashV *= Math.exp(-13 * step);
+  rig.squash += rig.squashV * step;
+  rig.squash = Math.max(0.7, Math.min(1.25, rig.squash));
+
+  // Footfall dust on the walk cycle's contact frames.
+  const speed = Math.hypot(f.vel.x, f.vel.y);
+  if (!inAir && speed > 2.2 && fx) {
+    const phase = Math.sin(f.anim.walk * 1.3);
+    if (Math.sign(phase) !== Math.sign(rig.lastStepPhase) && Math.abs(phase) > 0.1) {
+      fx.burst(f.pos.x, f.pos.y, 0.03, 2, {
+        color: '#7a7a6a', speedMax: 1.4, lifeMax: 0.3, kind: 'smoke', sizeMax: 0.12, gravity: 1,
+      });
+    }
+    rig.lastStepPhase = phase;
+  }
+
+  // Blink.
+  rig.blinkT -= step;
+  if (rig.blinkT <= 0) { rig.blinkT = 2.4 + (f.id % 5) * 0.7; rig.blink = 0.14; }
+  rig.blink = Math.max(0, rig.blink - step);
+
+  // Weapon trail decay.
+  for (let i = rig.weaponTrail.length - 1; i >= 0; i--) {
+    rig.weaponTrail[i].t -= step;
+    if (rig.weaponTrail[i].t <= 0) rig.weaponTrail.splice(i, 1);
+  }
+  if (!(f.state === 'attack')) rig.weaponTrail.length = 0;
+  return rig;
+}
+
 // --- humanoid ---------------------------------------------------------------
 
+// Which body mechanic each attack uses. This is what makes a jab look like a
+// jab and a rising kick look like a rising kick instead of one generic swing.
+const ACTION_MODE = {
+  light1: 'jab', light2: 'cross', light3: 'spin', light4: 'kick',
+  heavy: 'overhead', heavyCharged: 'overhead', dashAttack: 'palm',
+  air1: 'jab', air2: 'cross', airFinish: 'slam',
+  grab: 'grab', throw: 'slam', parryCounter: 'cross', simpleCounter: 'spin',
+  clawSwipe: 'claw', bite: 'lunge', lunge: 'palm', stomp: 'slam', tailWhip: 'spin',
+};
+
+const easeOut = (t) => 1 - Math.pow(1 - clamp01(t), 3);
+const easeIn = (t) => Math.pow(clamp01(t), 2.2);
+
 function bodyPose(f, time) {
-  // Facing: +1 draws to the right, -1 mirrors. `depth` is how much the body is
-  // turned toward (1) or away from (-1) the camera.
   const faceX = Math.cos(f.facing);
   const depth = Math.sin(f.facing);
   const dir = faceX >= 0 ? 1 : -1;
+  const rig = rigOf(f);
 
   const moving = Math.hypot(f.vel.x, f.vel.y);
   const walk = f.anim.walk;
-  const cycle = Math.sin(walk * 1.3);
-  const cycle2 = Math.sin(walk * 1.3 + PI);
-  const stride = clamp(moving / 7, 0, 1);
+  const stride = clamp(moving / 6.5, 0, 1);
+  const cycle = Math.sin(walk * 1.3) * stride;
+  const cycle2 = Math.sin(walk * 1.3 + PI) * stride;
   const breathe = Math.sin(f.anim.breathe) * 0.012;
 
-  let swing = 0, lunge = 0, guard = 0, castPose = 0, crouch = 0;
+  const P = {
+    dir, depth, cycle, cycle2, stride, breathe, moving, rig,
+    mode: null, windup: 0, strike: 0, follow: 0, spin: 0,
+    guard: 0, castPose: 0, rct: 0, crouch: 0, lean: 0, twist: 0,
+    airborne: f.z > 0.25, recoil: rig.recoil, recoilDir: rig.recoilDir,
+    squash: rig.squash, knocked: 0, swing: 0,
+  };
+
+  // --- attack phases -------------------------------------------------------
   if (f.state === 'attack' && f.action) {
     const a = f.action;
-    const total = a.def.startup + a.def.active + a.def.recovery;
-    const t = clamp01(a.t / total);
-    const st = a.def.startup / total;
-    swing = t < st ? -0.55 * (t / Math.max(st, 0.01)) : 1 - (t - st) / Math.max(1 - st, 0.01);
-    lunge = t < st ? t * 0.4 : (1 - t) * 0.5;
+    const def = a.def;
+    const total = def.startup + def.active + def.recovery;
+    const t = a.t;
+    P.mode = ACTION_MODE[def.id] || 'jab';
+    if (t < def.startup) {
+      // Anticipation: coil away from the target.
+      P.windup = easeOut(t / Math.max(0.01, def.startup));
+    } else if (t < def.startup + def.active) {
+      P.windup = 1;
+      P.strike = easeOut((t - def.startup) / Math.max(0.01, def.active));
+    } else {
+      P.windup = 1;
+      P.strike = 1;
+      P.follow = easeIn((t - def.startup - def.active) / Math.max(0.01, def.recovery));
+    }
+    P.swing = P.strike * (1 - P.follow);
+    // Spin attacks rotate the whole body through a full turn.
+    if (P.mode === 'spin') P.spin = (P.windup * 0.3 + P.strike * 1.0) * TAU * (def.id === 'light3' ? 1 : 0.6);
+    P.lean = P.windup * -0.08 + P.strike * 0.2 - P.follow * 0.1;
+    P.twist = (P.mode === 'cross' ? 0.5 : 0.25) * (P.strike - P.windup * 0.6);
   }
-  if (f.state === 'block') guard = 1;
-  if (f.state === 'cast' || f.state === 'domainCast') castPose = 1;
-  if (f.state === 'rct') castPose = 0.6;
-  if (f.state === 'stagger' || f.state === 'knockdown') crouch = 1;
-  if (f.z > 0.2) crouch = -0.3;
 
-  return { dir, depth, cycle, cycle2, stride, breathe, swing, lunge, guard, castPose, crouch, moving };
+  if (f.state === 'block') P.guard = 1;
+  if (f.state === 'cast' || f.state === 'domainCast') P.castPose = 1;
+  if (f.state === 'rct') P.rct = 1;
+  if (f.state === 'stagger') { P.crouch = 1; P.lean = 0.3; }
+  if (f.state === 'knockdown' || (f.state === 'stagger' && f.staggerTime > 0.9)) P.knocked = 1;
+  if (f.state === 'dash') P.lean = 0.35;
+  if (P.airborne) P.crouch = -0.25;
+  if (f.dead) P.knocked = 1;
+
+  P.lean += clamp(f.anim.lean, 0, 1) * 0.12;
+  return P;
 }
 
-function drawHuman(ctx, f, hpx, time, opts) {
+function drawHuman(ctx, f, hpx, time, opts, cam) {
   const a = f.appearance || {};
   const P = bodyPose(f, time);
+  const rig = P.rig;
   const H = f.height * hpx;
   const build = (a.build ?? 1) * f.scale;
   const uniform = a.uniform || f.color2 || '#1a1d24';
@@ -238,70 +384,121 @@ function drawHuman(ctx, f, hpx, time, opts) {
   const skin = a.skin || '#e8c8a8';
   const hairCol = a.hair || '#1b1b22';
 
-  const w = H * 0.115 * build;                       // torso half-width
+  const w = H * 0.115 * build;
   const hipY = -H * 0.46;
   const chestY = -H * 0.74;
   const neckY = -H * 0.84;
-  const headY = -H * 0.9 - H * 0.055;
   const headR = H * 0.075 * build;
-  const lean = P.lunge * 0.12 + P.crouch * 0.16 + f.anim.lean * 0.08;
+  const headY = -H * 0.9 - headR * 0.72;
 
   if (opts.ghost) ctx.globalAlpha = 0.45;
 
   ctx.save();
-  ctx.scale(P.dir, 1);
-  ctx.translate(0, P.crouch * H * 0.1);
-  ctx.rotate(-lean * 0.5);
 
-  // --- legs
+  // Knocked down: the whole figure falls to the ground.
+  if (P.knocked && !f.dead) {
+    ctx.translate(0, -H * 0.12);
+    ctx.rotate(P.dir * 1.15);
+  }
+
+  // Squash and stretch is applied to the whole body around the feet.
+  ctx.scale(1 / P.squash, P.squash);
+  ctx.scale(P.dir, 1);
+
+  // Hit recoil: shove the body away from the incoming direction.
+  if (P.recoil > 0.01) {
+    const away = Math.cos(P.recoilDir) * P.dir;
+    ctx.translate(away * P.recoil * w * 0.9, 0);
+    ctx.rotate(-away * P.recoil * 0.18);
+  }
+
+  ctx.translate(0, P.crouch * H * 0.1);
+  ctx.rotate(-P.lean * 0.5 + P.spin * 0);
+
+  // Spin moves turn the torso and arms rather than the feet.
+  const spinScale = P.spin ? Math.cos(P.spin) : 1;
+
+  // --- legs ----------------------------------------------------------------
   const legSpread = w * 0.55;
-  const kneeLift = P.stride * H * 0.09;
+  const kneeLift = P.stride * H * 0.1;
+  const kickLeg = P.mode === 'kick' ? P.strike * (1 - P.follow * 0.5) : 0;
+  const tuck = P.mode === 'slam' ? P.strike * 0.6 : 0;
+
   for (const side of [-1, 1]) {
-    const c = side > 0 ? P.cycle : P.cycle2;
+    const front = side > 0;
+    const c = front ? P.cycle : P.cycle2;
     const hipX = side * legSpread;
-    const kneeX = hipX + c * H * 0.06;
-    const kneeY = hipY + H * 0.22 - Math.max(0, c) * kneeLift;
-    const footX = hipX + c * H * 0.13;
-    const footY = -Math.max(0, c * 0.5) * kneeLift * 0.7 + (f.z > 0.2 ? -H * 0.06 : 0);
-    limb(ctx, hipX, hipY, kneeX, kneeY, w * 0.46, w * 0.36, shade(uniform, side > 0 ? 1 : 0.82));
-    limb(ctx, kneeX, kneeY, footX, footY, w * 0.36, w * 0.26, shade(uniform, side > 0 ? 0.9 : 0.74));
-    // Shoe.
+    let kneeX = hipX + c * H * 0.06;
+    let kneeY = hipY + H * 0.22 - Math.max(0, c) * kneeLift - tuck * H * 0.14;
+    let footX = hipX + c * H * 0.13;
+    let footY = -Math.max(0, c * 0.5) * kneeLift * 0.7 + (P.airborne ? -H * 0.06 : 0) - tuck * H * 0.2;
+
+    if (front && kickLeg > 0) {
+      // Rising kick: the leg swings up through the target.
+      const k = kickLeg;
+      kneeX = hipX + w * (1.2 + k * 1.4);
+      kneeY = hipY + H * (0.16 - k * 0.3);
+      footX = hipX + w * (1.6 + k * 3.6);
+      footY = hipY + H * (0.12 - k * 0.62);
+    }
+    if (P.knocked) {
+      kneeY = hipY + H * 0.16;
+      footY = hipY + H * 0.08;
+    }
+
+    limb(ctx, hipX, hipY, kneeX, kneeY, w * 0.46, w * 0.36, shade(uniform, front ? 1 : 0.82));
+    limb(ctx, kneeX, kneeY, footX, footY, w * 0.36, w * 0.26, shade(uniform, front ? 0.9 : 0.74));
     ctx.fillStyle = shade(uniform, 0.55);
     ctx.beginPath();
     ctx.ellipse(footX + w * 0.18, footY - w * 0.12, w * 0.42, w * 0.2, 0, 0, TAU);
     ctx.fill();
   }
 
-  // --- torso
+  // --- trailing coat -------------------------------------------------------
+  if (P.moving > 3 || P.airborne || a.robe) {
+    const sway = rig.cloth;
+    ctx.fillStyle = shade(uniform, 0.72);
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.9, chestY + H * 0.06);
+    ctx.quadraticCurveTo(
+      -w * 2.2 - sway[0].x * H, hipY + sway[0].y * H,
+      -w * 2.6 - sway[1].x * H, hipY + H * 0.16 + sway[1].y * H);
+    ctx.quadraticCurveTo(-w * 1.2, hipY + H * 0.1, -w * 0.3, hipY);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // --- torso ---------------------------------------------------------------
   ctx.save();
   ctx.translate(0, P.breathe * H);
+  ctx.rotate(P.twist * 0.25);
+  const torsoW = w * (1 + P.twist * 0.12) * (spinScale * 0.25 + 0.75);
   ctx.beginPath();
-  ctx.moveTo(-w, hipY);
-  ctx.quadraticCurveTo(-w * 1.22, (hipY + chestY) / 2, -w * 1.1, chestY);
-  ctx.quadraticCurveTo(-w * 0.9, neckY, 0, neckY);
-  ctx.quadraticCurveTo(w * 0.9, neckY, w * 1.1, chestY);
-  ctx.quadraticCurveTo(w * 1.22, (hipY + chestY) / 2, w, hipY);
-  ctx.quadraticCurveTo(0, hipY + H * 0.03, -w, hipY);
+  ctx.moveTo(-torsoW, hipY);
+  ctx.quadraticCurveTo(-torsoW * 1.22, (hipY + chestY) / 2, -torsoW * 1.1, chestY);
+  ctx.quadraticCurveTo(-torsoW * 0.9, neckY, 0, neckY);
+  ctx.quadraticCurveTo(torsoW * 0.9, neckY, torsoW * 1.1, chestY);
+  ctx.quadraticCurveTo(torsoW * 1.22, (hipY + chestY) / 2, torsoW, hipY);
+  ctx.quadraticCurveTo(0, hipY + H * 0.03, -torsoW, hipY);
   ctx.closePath();
   ctx.fillStyle = uniform;
   ctx.fill();
 
-  // Trim / collar.
   ctx.strokeStyle = hexA(accent, 0.85);
   ctx.lineWidth = Math.max(1, H * 0.012);
   ctx.beginPath();
-  ctx.moveTo(-w * 0.75, neckY + H * 0.02);
+  ctx.moveTo(-torsoW * 0.75, neckY + H * 0.02);
   ctx.lineTo(0, chestY + H * 0.05);
-  ctx.lineTo(w * 0.75, neckY + H * 0.02);
+  ctx.lineTo(torsoW * 0.75, neckY + H * 0.02);
   ctx.stroke();
 
   if (a.tie) {
     ctx.fillStyle = accent;
     ctx.beginPath();
     ctx.moveTo(0, chestY + H * 0.04);
-    ctx.lineTo(w * 0.18, chestY + H * 0.1);
+    ctx.lineTo(torsoW * 0.18, chestY + H * 0.1);
     ctx.lineTo(0, hipY + H * 0.08);
-    ctx.lineTo(-w * 0.18, chestY + H * 0.1);
+    ctx.lineTo(-torsoW * 0.18, chestY + H * 0.1);
     ctx.closePath();
     ctx.fill();
   }
@@ -311,13 +508,13 @@ function drawHuman(ctx, f, hpx, time, opts) {
     for (let i = 0; i < 4; i++) {
       const yy = lerp(chestY, hipY, i / 3);
       ctx.beginPath();
-      ctx.moveTo(-w, yy);
-      ctx.lineTo(w, yy + H * 0.01);
+      ctx.moveTo(-torsoW, yy);
+      ctx.lineTo(torsoW, yy + H * 0.01);
       ctx.stroke();
       for (let j = -2; j <= 2; j++) {
         ctx.beginPath();
-        ctx.moveTo(j * w * 0.4, yy - H * 0.012);
-        ctx.lineTo(j * w * 0.4, yy + H * 0.012);
+        ctx.moveTo(j * torsoW * 0.4, yy - H * 0.012);
+        ctx.lineTo(j * torsoW * 0.4, yy + H * 0.012);
         ctx.stroke();
       }
     }
@@ -332,30 +529,105 @@ function drawHuman(ctx, f, hpx, time, opts) {
   }
   ctx.restore();
 
-  // --- arms
+  // --- arms ----------------------------------------------------------------
   const shoulderY = chestY - H * 0.01;
-  const reachA = P.swing;
-  const weaponHand = { x: 0, y: 0 };
+  const weaponHand = { x: w * 1.4, y: shoulderY + H * 0.2, angle: -0.5 };
+
   for (const side of [-1, 1]) {
     const front = side > 0;
     const sx = side * w * 1.0;
     let elbowX, elbowY, handX, handY;
-    if (P.guard) {
-      elbowX = sx * 0.9 + w * 0.5;
+
+    if (P.knocked) {
+      elbowX = sx * 1.4;
       elbowY = shoulderY + H * 0.1;
-      handX = w * 1.1;
-      handY = shoulderY + H * 0.02;
+      handX = sx * 1.9;
+      handY = shoulderY + H * 0.16;
+    } else if (P.guard) {
+      // Forearms crossed in front of the head.
+      elbowX = sx * 0.7 + w * 0.4;
+      elbowY = shoulderY + H * 0.11;
+      handX = w * (front ? 1.25 : 0.85);
+      handY = shoulderY - H * (front ? 0.04 : 0.01);
+    } else if (P.rct) {
+      // One palm hovering over the wound, the other braced.
+      elbowX = sx * 1.0;
+      elbowY = shoulderY + H * 0.1;
+      handX = front ? w * 0.6 : sx * 1.2;
+      handY = front ? hipY - H * 0.02 : shoulderY + H * 0.2;
     } else if (P.castPose) {
-      elbowX = sx * 1.1 + w * 0.8;
-      elbowY = shoulderY + H * 0.06;
-      handX = w * (front ? 2.0 : 1.3);
-      handY = shoulderY - H * 0.05 - (front ? H * 0.02 : 0);
-    } else if (front && reachA !== 0) {
-      const ext = clamp(reachA, -1, 1);
-      elbowX = w * (1.2 + ext * 0.9);
-      elbowY = shoulderY + H * 0.09 - ext * H * 0.03;
-      handX = w * (1.5 + ext * 2.3);
-      handY = shoulderY + H * 0.06 - ext * H * 0.06;
+      // Hand raised, palm forward, fingers spread.
+      elbowX = sx * 1.1 + w * 0.7;
+      elbowY = shoulderY + H * 0.04;
+      handX = w * (front ? 2.1 : 1.2);
+      handY = shoulderY - H * (front ? 0.1 : 0.02);
+    } else if (front && P.mode) {
+      const t = P.strike * (1 - P.follow * 0.6);
+      const back = P.windup * (1 - P.strike);
+      switch (P.mode) {
+        case 'jab':
+        case 'cross':
+          elbowX = w * (1.0 - back * 0.8 + t * 1.4);
+          elbowY = shoulderY + H * (0.1 - t * 0.02);
+          handX = w * (1.3 - back * 1.6 + t * 3.1);
+          handY = shoulderY + H * (0.08 - t * 0.04);
+          break;
+        case 'overhead':
+          elbowX = w * (0.6 + t * 1.3);
+          elbowY = shoulderY - H * (0.16 * (1 - t)) + H * (0.16 * t);
+          handX = w * (0.3 + t * 2.6);
+          handY = shoulderY - H * (0.32 * (1 - t)) + H * (0.3 * t);
+          break;
+        case 'slam':
+          elbowX = w * (0.9 + t * 0.9);
+          elbowY = shoulderY - H * (0.2 * (1 - t)) + H * (0.24 * t);
+          handX = w * (0.6 + t * 2.0);
+          handY = shoulderY - H * (0.42 * (1 - t)) + H * (0.46 * t);
+          break;
+        case 'palm':
+          elbowX = w * (1.1 + t * 1.1);
+          elbowY = shoulderY + H * 0.08;
+          handX = w * (1.4 + t * 2.6);
+          handY = shoulderY + H * 0.04;
+          break;
+        case 'grab':
+          elbowX = w * (1.2 + t * 0.9);
+          elbowY = shoulderY + H * 0.07;
+          handX = w * (1.6 + t * 1.9);
+          handY = shoulderY + H * 0.02;
+          break;
+        case 'claw':
+          elbowX = w * (1.2 + t * 1.0);
+          elbowY = shoulderY + H * (0.04 + t * 0.06);
+          handX = w * (1.2 - back * 1.4 + t * 3.0);
+          handY = shoulderY - H * (0.1 * (1 - t)) + H * (0.14 * t);
+          break;
+        case 'spin':
+          elbowX = w * 1.6;
+          elbowY = shoulderY + H * 0.05;
+          handX = w * 3.0;
+          handY = shoulderY + H * 0.05;
+          break;
+        case 'kick':
+        default:
+          elbowX = sx * 1.1 - w * 0.6;
+          elbowY = shoulderY + H * 0.14;
+          handX = sx * 1.2 - w * 1.0;
+          handY = shoulderY + H * 0.1;
+          break;
+      }
+    } else if (!front && P.mode === 'spin') {
+      elbowX = -w * 1.6;
+      elbowY = shoulderY + H * 0.05;
+      handX = -w * 2.8;
+      handY = shoulderY + H * 0.06;
+    } else if (!front && P.mode) {
+      // Counter-balance arm pulled back.
+      const t = P.strike;
+      elbowX = sx * 1.1 - w * t * 0.5;
+      elbowY = shoulderY + H * 0.14;
+      handX = sx * 1.3 - w * t * 1.1;
+      handY = shoulderY + H * 0.2;
     } else {
       const c = front ? P.cycle2 : P.cycle;
       elbowX = sx * 1.05 + c * H * 0.03;
@@ -363,42 +635,56 @@ function drawHuman(ctx, f, hpx, time, opts) {
       handX = sx * 1.1 + c * H * 0.06;
       handY = shoulderY + H * 0.24;
     }
+
     const armCol = shade(uniform, front ? 1.08 : 0.78);
     limb(ctx, sx, shoulderY, elbowX, elbowY, w * 0.36, w * 0.28, armCol);
     limb(ctx, elbowX, elbowY, handX, handY, w * 0.28, w * 0.2, armCol);
-    // Hand.
     ctx.fillStyle = skin;
     ctx.beginPath();
     ctx.arc(handX, handY, w * 0.24, 0, TAU);
     ctx.fill();
-    if (front) { weaponHand.x = handX; weaponHand.y = handY; }
+
+    if (front) {
+      weaponHand.x = handX;
+      weaponHand.y = handY;
+      weaponHand.angle = Math.atan2(handY - elbowY, handX - elbowX);
+    }
+    // Cursed energy gathering in the casting palm.
+    if (front && (P.castPose || P.rct)) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      blit(ctx, glowSprite(P.rct ? '#8ef0bd' : (f.technique?.color || accent)),
+        handX, handY, w * 2.4, 0.7);
+      ctx.restore();
+    }
   }
 
-  // --- weapon
+  // --- weapon --------------------------------------------------------------
   if (f.tool && f.tool.shape && f.tool.shape !== 'none') {
-    drawTool(ctx, f.tool, weaponHand.x, weaponHand.y, H, P, w);
+    drawTool(ctx, f, f.tool, weaponHand, H, P, w, cam);
   }
 
-  // --- head
+  // --- head ----------------------------------------------------------------
   ctx.save();
   ctx.translate(0, P.breathe * H * 1.2);
-  ctx.rotate(-P.lunge * 0.1);
-  // neck
+  ctx.rotate(-P.lean * 0.22 + P.twist * 0.12);
   limb(ctx, 0, neckY + H * 0.02, 0, headY + headR * 0.7, w * 0.3, w * 0.28, shade(skin, 0.85));
-  // head
   ctx.fillStyle = skin;
   ctx.beginPath();
   ctx.ellipse(0, headY, headR * 0.92, headR, 0, 0, TAU);
   ctx.fill();
-  // jaw shading
   ctx.fillStyle = hexA('#000000', 0.12);
   ctx.beginPath();
   ctx.ellipse(-headR * 0.3, headY + headR * 0.2, headR * 0.6, headR * 0.5, 0, 0, TAU);
   ctx.fill();
 
+  // Hair with secondary motion.
+  ctx.save();
+  ctx.translate(rig.hair.x * H * 0.5, rig.hair.y * H * 0.5);
+  ctx.rotate(-rig.hair.x * 0.9);
   drawHair(ctx, a.hairStyle || 'short', hairCol, headR, headY, H);
+  ctx.restore();
 
-  // Eyes / blindfold / mask.
   if (a.blindfold) {
     ctx.fillStyle = '#14161c';
     ctx.fillRect(-headR * 1.05, headY - headR * 0.28, headR * 2.1, headR * 0.44);
@@ -412,20 +698,44 @@ function drawHuman(ctx, f, hpx, time, opts) {
     ctx.fillRect(headR * 0.1, headY - headR * 0.28, headR * 0.8, headR * 0.34);
   } else {
     const eyeCol = a.eyes || f.eyeColor;
+    const lid = rig.blink > 0 ? 0.12 : 1;
+    const squint = P.mode ? 0.72 : 1;
     ctx.fillStyle = eyeCol;
     ctx.beginPath();
-    ctx.ellipse(headR * 0.42, headY - headR * 0.06, headR * 0.2, headR * 0.13, 0, 0, TAU);
+    ctx.ellipse(headR * 0.42, headY - headR * 0.06, headR * 0.2, headR * 0.13 * lid * squint, 0, 0, TAU);
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(-headR * 0.18, headY - headR * 0.06, headR * 0.16, headR * 0.11, 0, 0, TAU);
+    ctx.ellipse(-headR * 0.18, headY - headR * 0.06, headR * 0.16, headR * 0.11 * lid * squint, 0, 0, TAU);
     ctx.fill();
-    eyeGlow(ctx, headR * 0.42, headY - headR * 0.06, headR * 0.7, eyeCol);
-    eyeGlow(ctx, -headR * 0.18, headY - headR * 0.06, headR * 0.6, eyeCol);
+    if (lid > 0.5) {
+      eyeGlow(ctx, headR * 0.42, headY - headR * 0.06, headR * 0.7, eyeCol);
+      eyeGlow(ctx, -headR * 0.18, headY - headR * 0.06, headR * 0.6, eyeCol);
+    }
+    // Brow line — the difference between neutral and furious.
+    if (P.mode || P.guard) {
+      ctx.strokeStyle = hexA('#1a1216', 0.7);
+      ctx.lineWidth = Math.max(1, headR * 0.09);
+      ctx.beginPath();
+      ctx.moveTo(headR * 0.18, headY - headR * 0.3);
+      ctx.lineTo(headR * 0.66, headY - headR * 0.18);
+      ctx.stroke();
+    }
   }
   if (a.scarf) {
     ctx.fillStyle = '#e8e8e8';
     ctx.beginPath();
     ctx.ellipse(0, headY + headR * 0.95, headR * 1.15, headR * 0.5, 0, 0, TAU);
+    ctx.fill();
+    // Trailing tail.
+    const s0 = rig.cloth[0], s1 = rig.cloth[1];
+    ctx.beginPath();
+    ctx.moveTo(-headR * 0.5, headY + headR);
+    ctx.quadraticCurveTo(
+      -headR * 2 - s0.x * H * 1.2, headY + headR * 1.6 + s0.y * H,
+      -headR * 3.2 - s1.x * H * 1.4, headY + headR * 2.6 + s1.y * H * 1.2);
+    ctx.lineTo(-headR * 2.8 - s1.x * H * 1.4, headY + headR * 3.2 + s1.y * H * 1.2);
+    ctx.quadraticCurveTo(-headR * 1.6 - s0.x * H, headY + headR * 2.0 + s0.y * H, headR * 0.2, headY + headR * 1.1);
+    ctx.closePath();
     ctx.fill();
   }
   if (a.mouthMark) {
@@ -557,11 +867,69 @@ function drawHair(ctx, style, col, r, y, H) {
   }
 }
 
-function drawTool(ctx, tool, hx, hy, H, P, w) {
+/**
+ * Draw the equipped cursed tool in the lead hand, plus its motion ribbon.
+ * The ribbon is sampled in body-local space and corrected by how far the
+ * fighter has travelled since each sample, so it tracks the swing rather than
+ * smearing across the screen.
+ */
+function drawTool(ctx, f, tool, hand, H, P, w, cam) {
   const len = (tool.length || 1.2) * H * 0.46;
-  const angle = -0.5 - P.swing * 1.7;
+  const rig = P.rig;
+
+  // Blade angle follows the mechanic of the current attack.
+  let angle = hand.angle;
+  switch (P.mode) {
+    case 'overhead':
+    case 'slam': angle = lerp(-2.1, 0.9, P.strike); break;
+    case 'spin': angle = 0.1; break;
+    case 'jab':
+    case 'cross': angle = lerp(-0.9, -0.1, P.strike); break;
+    case 'claw': angle = lerp(-1.4, 0.7, P.strike); break;
+    case 'palm':
+    case 'grab': angle = -0.2; break;
+    default: angle = P.guard ? -1.2 : (P.castPose ? -1.6 : -0.5 - P.swing * 0.6); break;
+  }
+
+  // Sample the tip for the trail while the tool is actually moving.
+  if (f.state === 'attack' && P.strike > 0.02 && P.follow < 0.6) {
+    const tipX = hand.x + Math.cos(angle) * (len + w * 0.3);
+    const tipY = hand.y + Math.sin(angle) * (len + w * 0.3);
+    const midX = hand.x + Math.cos(angle) * len * 0.45;
+    const midY = hand.y + Math.sin(angle) * len * 0.45;
+    rig.weaponTrail.push({
+      lx: tipX, ly: tipY, mx: midX, my: midY,
+      wx: f.pos.x, wy: f.pos.y, t: 0.16, max: 0.16,
+    });
+    if (rig.weaponTrail.length > 14) rig.weaponTrail.shift();
+  }
+
+  // Ribbon between the tip path and the mid path.
+  if (rig.weaponTrail.length > 2) {
+    const s = cam ? cam.scale : 30;
+    const conv = (p) => {
+      const dx = (p.wx - f.pos.x) * s * P.dir;
+      const dy = (p.wy - f.pos.y) * s * FLATTEN;
+      return { tx: p.lx + dx, ty: p.ly + dy, mx: p.mx + dx, my: p.my + dy, a: clamp01(p.t / p.max) };
+    };
+    const pts = rig.weaponTrail.map(conv);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.beginPath();
+    ctx.moveTo(pts[0].tx, pts[0].ty);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].tx, pts[i].ty);
+    for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].mx, pts[i].my);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(pts[0].tx, pts[0].ty, pts[pts.length - 1].tx, pts[pts.length - 1].ty);
+    grad.addColorStop(0, hexA(tool.color || '#ffffff', 0.02));
+    grad.addColorStop(1, hexA(f.technique?.color || tool.color || '#ffffff', 0.42));
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.restore();
+  }
+
   ctx.save();
-  ctx.translate(hx, hy);
+  ctx.translate(hand.x, hand.y);
   ctx.rotate(angle);
   const col = tool.color || '#cfd6e0';
   switch (tool.shape) {
@@ -1112,6 +1480,144 @@ function drawIsomer(ctx, f, hpx, time) {
   for (const s of [-1, 1]) {
     limb(ctx, s * H * 0.26, -H * 0.5, s * H * 0.52, -H * 0.16, H * 0.07, H * 0.05, f.color2);
   }
+}
+
+/** Rika — a special grade that was a person, drawn as mass with a face in it. */
+function drawRika(ctx, f, hpx, time) {
+  const H = f.height * hpx;
+  const P = bodyPose(f, time);
+  const t = time + f.id;
+  ctx.save();
+  ctx.scale(P.dir, 1);
+
+  // Long trailing hair / mantle.
+  ctx.fillStyle = f.color2;
+  ctx.beginPath();
+  ctx.moveTo(-H * 0.34, -H * 0.78);
+  for (let i = 0; i <= 6; i++) {
+    const p = i / 6;
+    ctx.lineTo(-H * (0.34 + p * 0.28) + Math.sin(t * 2 + i) * H * 0.03, -H * 0.78 + p * H * 0.82);
+  }
+  ctx.lineTo(H * 0.3, 0);
+  ctx.lineTo(H * 0.34, -H * 0.78);
+  ctx.closePath();
+  ctx.fill();
+
+  // Body.
+  blob(ctx, 0, -H * 0.52, H * 0.34, H * 0.42, f.color, 0.12, t * 0.7, f.id);
+
+  // Enormous mouth with teeth.
+  const open = 0.35 + Math.abs(Math.sin(t * 2.2)) * 0.5;
+  ctx.fillStyle = '#180208';
+  ctx.beginPath();
+  ctx.ellipse(0, -H * 0.5, H * 0.2, H * 0.17 * open + H * 0.03, 0, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = '#f0e4dc';
+  for (let i = -3; i <= 3; i++) {
+    const x = i * H * 0.055;
+    const h = H * 0.05 * open;
+    ctx.beginPath();
+    ctx.moveTo(x - H * 0.02, -H * 0.5 - H * 0.17 * open);
+    ctx.lineTo(x + H * 0.02, -H * 0.5 - H * 0.17 * open);
+    ctx.lineTo(x, -H * 0.5 - H * 0.17 * open + h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x - H * 0.02, -H * 0.5 + H * 0.17 * open);
+    ctx.lineTo(x + H * 0.02, -H * 0.5 + H * 0.17 * open);
+    ctx.lineTo(x, -H * 0.5 + H * 0.17 * open - h);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Eyes above the mouth.
+  ctx.fillStyle = f.eyeColor;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(side * H * 0.14, -H * 0.76, H * 0.05, H * 0.065, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#2a0a14';
+    ctx.beginPath();
+    ctx.arc(side * H * 0.14, -H * 0.76, H * 0.022, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = f.eyeColor;
+  }
+
+  // Arms.
+  for (const side of [-1, 1]) {
+    const reach = P.strike * 0.5;
+    limb(ctx, side * H * 0.28, -H * 0.62,
+      side * H * (0.52 + reach), -H * (0.4 - reach * 0.2), H * 0.08, H * 0.05, f.color);
+  }
+  ctx.restore();
+}
+
+/** A water shikigami: a fish that swims through air. */
+function drawFish(ctx, f, hpx, time) {
+  const H = f.height * hpx;
+  const t = time * 6 + f.id;
+  const P = bodyPose(f, time);
+  ctx.save();
+  ctx.scale(P.dir, 1);
+  ctx.translate(0, -H * 0.5);
+  ctx.rotate(Math.sin(t * 0.5) * 0.2);
+  ctx.fillStyle = f.color;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, H * 0.3, H * 0.14, 0, 0, TAU);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-H * 0.28, 0);
+  ctx.lineTo(-H * 0.46, -H * 0.12 + Math.sin(t) * H * 0.05);
+  ctx.lineTo(-H * 0.46, H * 0.12 + Math.sin(t) * H * 0.05);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = hexA('#ffffff', 0.3);
+  ctx.beginPath();
+  ctx.ellipse(0, -H * 0.04, H * 0.2, H * 0.05, 0, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = f.eyeColor;
+  ctx.beginPath();
+  ctx.arc(H * 0.18, -H * 0.03, H * 0.03, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** A hollow puppet built to take a hit. */
+function drawPuppet(ctx, f, hpx, time) {
+  const H = f.height * hpx;
+  const P = bodyPose(f, time);
+  const w = H * 0.12;
+  ctx.save();
+  ctx.scale(P.dir, 1);
+  for (const side of [-1, 1]) {
+    const c = side > 0 ? P.cycle : P.cycle2;
+    limb(ctx, side * w * 0.6, -H * 0.44, side * w * 0.7 + c * H * 0.05, 0, w * 0.4, w * 0.3, shade(f.color, 0.8));
+  }
+  // Boxy chest with a seam and rivets.
+  ctx.fillStyle = f.color;
+  ctx.fillRect(-w * 1.2, -H * 0.82, w * 2.4, H * 0.4);
+  ctx.strokeStyle = hexA('#000000', 0.5);
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(-w * 1.2, -H * 0.82, w * 2.4, H * 0.4);
+  ctx.fillStyle = shade(f.color, 0.6);
+  for (let i = -1; i <= 1; i++) {
+    ctx.beginPath();
+    ctx.arc(i * w * 0.7, -H * 0.62, w * 0.14, 0, TAU);
+    ctx.fill();
+  }
+  for (const side of [-1, 1]) {
+    const t = P.strike;
+    limb(ctx, side * w * 1.2, -H * 0.78, side * w * (1.8 + t), -H * (0.5 - t * 0.1), w * 0.3, w * 0.24, shade(f.color, 0.9));
+  }
+  // Head: a smooth mask with one lit eye slit.
+  ctx.fillStyle = shade(f.color, 1.2);
+  ctx.beginPath();
+  ctx.ellipse(0, -H * 0.9, w * 0.62, H * 0.07, 0, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = f.eyeColor;
+  ctx.fillRect(-w * 0.4, -H * 0.91, w * 0.8, H * 0.016);
+  eyeGlow(ctx, 0, -H * 0.9, H * 0.06, f.eyeColor);
+  ctx.restore();
 }
 
 // --- utility ----------------------------------------------------------------

@@ -844,6 +844,7 @@ export class Fighter {
       if (req.flow && this.flow < req.flow) return false;
       if (req.ceControl && this.stats.ceControl < req.ceControl) return false;
       if (req.hpBelow && this.hpFraction > req.hpBelow) return false;
+      if (req.jackpotMeter && (this.jackpotMeter ?? 0) < req.jackpotMeter) return false;
     }
     if (ab.throat && this.throat > 100 - ab.throat * 0.4) return false;
     return true;
@@ -859,6 +860,9 @@ export class Fighter {
     if (ab.hpCost && this.hp <= ab.hpCost * 1.2) return 'Not enough blood';
     if (ab.requires?.flow && this.flow < ab.requires.flow) return 'Flow too low';
     if (ab.requires?.hpBelow && this.hpFraction > ab.requires.hpBelow) return 'Requires low health';
+    if (ab.requires?.jackpotMeter && (this.jackpotMeter ?? 0) < ab.requires.jackpotMeter) {
+      return `Reels ${Math.round(this.jackpotMeter ?? 0)}% / 100%`;
+    }
     if (ab.throat && this.throat > 100 - ab.throat * 0.4) return 'Throat too strained';
     return 'Ready';
   }
@@ -956,7 +960,7 @@ export class Fighter {
     world.audio('cast', { volume: 0.9, pitch: 0.7 });
     world.fx('domainCharge', { pos: this.pos, z: this.z, owner: this.id, color: d.color, time: castTime });
     world.event({ type: 'domainCast', fighter: this.id, domain: d.id });
-    if (!this.flags.silentDomain) world.banner(d.jp, `${this.name} — ${d.name}`, d.color, castTime + 0.6);
+    // No banner here: the domain cut-in in the HUD is the announcement.
     return true;
   }
 

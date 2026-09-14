@@ -107,6 +107,7 @@ export class Renderer {
     this.time += dt;
     const t = this.time;
 
+    this.dt = dt;
     ctx.save();
     cam.applyTransform(ctx);
 
@@ -708,7 +709,7 @@ export class Renderer {
     }
 
     drawAura(ctx, cam, f, t);
-    drawFighter(ctx, cam, f, t);
+    drawFighter(ctx, cam, f, t, this.dt || 1 / 60, fx);
 
     if (!f.dead) this.drawFighterOverlay(ctx, cam, world, f, t);
   }
@@ -1157,6 +1158,68 @@ export class Renderer {
 
   // -------------------------------------------------------------------------
 
+  /** The veil (帳) dropping over the arena at the start of a fight. */
+  drawVeilIntro(ctx, W, H, dt) {
+    if (!(this.veilIntro > 0)) return;
+    this.veilIntro -= dt;
+    const t = clamp01(1 - this.veilIntro / this.veilIntroMax);
+    ctx.save();
+    // The curtain falls, then lifts away from the middle.
+    const fall = clamp01(t / 0.45);
+    const lift = clamp01((t - 0.55) / 0.45);
+    const top = -H + H * fall * (1 + lift);
+    ctx.globalAlpha = 1 - lift * 0.9;
+    const g = ctx.createLinearGradient(0, top, 0, top + H);
+    g.addColorStop(0, '#05060a');
+    g.addColorStop(0.82, '#0b0714');
+    g.addColorStop(1, 'rgba(40,10,60,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, top, W, H);
+    // The seam of the veil.
+    ctx.strokeStyle = hexA('#6a2aa0', 0.8 * (1 - lift));
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, top + H);
+    ctx.lineTo(W, top + H);
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = hexA('#8a3ad0', 0.25 * (1 - lift));
+    ctx.fillRect(0, top + H - 26, W, 26);
+    ctx.globalCompositeOperation = 'source-over';
+    // 帳.
+    if (fall > 0.5) {
+      ctx.globalAlpha = clamp01((fall - 0.5) * 3) * (1 - lift);
+      ctx.textAlign = 'center';
+      ctx.font = `900 ${Math.round(H * 0.16)}px "Noto Sans JP", system-ui, sans-serif`;
+      ctx.fillStyle = '#b06ae0';
+      ctx.fillText('帳', W / 2, H * 0.52);
+      ctx.font = `700 14px system-ui, sans-serif`;
+      ctx.fillStyle = 'rgba(255,255,255,0.65)';
+      ctx.fillText('THE VEIL DESCENDS', W / 2, H * 0.58);
+    }
+    ctx.restore();
+  }
+
+  /** Radial manga speed lines — used for dashes and impact frames. */
+  drawSpeedLines(ctx, W, H, strength, color, seed) {
+    if (strength <= 0.01) return;
+    const cx = W / 2, cy = H / 2;
+    const R = Math.hypot(W, H) * 0.55;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexA(color, 0.5 * strength);
+    for (let i = 0; i < 54; i++) {
+      const a = (i / 54) * TAU + seed;
+      const inner = R * (0.34 + noise1(i * 1.7, 3) * 0.3) * (1.1 - strength * 0.35);
+      ctx.lineWidth = (0.6 + noise1(i * 0.9, 11) * 3.2) * strength;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+      ctx.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   drawPost(ctx, world, fx, cam, W, H, dt) {
     // Domain colour wash for whoever is inside one.
     const player = world.player;
@@ -1216,6 +1279,26 @@ export class Renderer {
       ctx.fillRect(0, 0, W, H);
       ctx.restore();
     }
+
+    // Impact frames: the panel-border moment on a big connection.
+    for (const im of fx.impacts) {
+      const k = clamp01(im.life / im.max);
+      this.drawSpeedLines(ctx, W, H, k * im.strength, im.color, im.seed);
+      if (im.flash) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = hexA(im.color, 0.16 * k * im.strength);
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
+    }
+
+    // Dash speed lines.
+    if (player && player.state === 'dash') {
+      this.drawSpeedLines(ctx, W, H, 0.5, '#ffffff', this.time * 3);
+    }
+
+    this.drawVeilIntro(ctx, W, H, dt);
 
     // Vignette (baked).
     if (this.settings.vignette && this.vignetteCanvas) {
