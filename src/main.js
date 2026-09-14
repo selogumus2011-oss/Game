@@ -414,7 +414,7 @@ class Game {
           this.effects.sprite({
             x: ev.pos.x, y: ev.pos.y, z: ev.z,
             text: ev.jp, color: ev.color,
-            size: ev.ultimate ? 40 : 24, life: ev.ultimate ? 1.3 : 0.85,
+            size: ev.ultimate ? 30 : 22, life: ev.ultimate ? 1.1 : 0.8,
             style: ev.ultimate ? 'flash' : 'kanji',
           });
         }

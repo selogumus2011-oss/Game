@@ -330,6 +330,11 @@ feedback:
   and ultimates get a bigger stamp and a camera punch.
 - **Cast telegraphs**: a shrinking ring and a progress arc over any fighter
   charging a technique, so there is a readable window to interrupt them.
+- **The gather**: a technique being cast forms a visible orb in the working
+  hand, loose and wide at first and compressing to a dense point as the cast
+  finishes, with energy falling into it from every side and rings closing on it.
+  It takes the colour of the specific ability rather than the technique — Blue,
+  Red and Purple are one technique and three colours.
 - **Impact frames**: radial manga speed lines and a colour wash. They converge
   on the actual point of impact in the world rather than the middle of the
   screen, and they fire for cursed techniques too — scaled by how much of the

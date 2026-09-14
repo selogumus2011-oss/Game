@@ -326,7 +326,8 @@ function drawCurseBody(dl, cam, f, sk, S, q, time) {
 
 const auraDome = () => cached('auraDome', () => domeMesh(1, 12, 6, '#ffffff', 1));
 const auraRing = () => cached('auraRing', () => ringMesh(0.86, 1, 28, '#ffffff', 1));
-const auraSphere = () => cached('auraSphere', () => sphere(1, 10, 7, '#ffffff'));
+const auraSphere = () => cached('auraSphere', () => sphere(1, 12, 8, '#ffffff'));
+const auraBolt = () => cached('auraBolt', () => cylinder(1, 0.2, 1, 5, '#ffffff'));
 
 function drawAuras(dl, cam, f, sk, S, q, time, fade) {
   const H = f.height;
@@ -379,6 +380,70 @@ function drawAuras(dl, cam, f, sk, S, q, time, fade) {
     S.alpha = 0.32 * (1 - (time * 1.6 % 1));
     drawMesh(dl, cam, auraRing(), tmpMat, S);
     S.additive = false; S.alpha = fade; S.tint = null;
+  }
+
+  // Charging a technique: the energy gathers in the working hand and compresses
+  // as the cast completes. A ring on the floor tells you a cast is happening;
+  // an orb between the hands tells you what is about to come out of them, which
+  // is how every one of these techniques is actually staged on screen.
+  if (f.state === 'cast' && f.cast) {
+    const ab = f.cast.ability;
+    const prog = clamp01(f.cast.t / Math.max(0.01, ab.castTime || 0.4));
+    const hand = sk.weaponHand || sk.hR;
+    const wx = rootMat[0] * hand.x + rootMat[1] * hand.y + rootMat[2] * hand.z + rootMat[3];
+    const wy = rootMat[4] * hand.x + rootMat[5] * hand.y + rootMat[6] * hand.z + rootMat[7];
+    const wz = rootMat[8] * hand.x + rootMat[9] * hand.y + rootMat[10] * hand.z + rootMat[11];
+    // The orb takes the colour of what is being cast, not of the technique as
+    // a whole — Blue, Red and Purple are the same technique and three colours.
+    const col = hexToRgb(ab.color || ab.projectile?.color || ab.beamColor
+      || f.technique?.color || '#8ad8ff');
+    const cTint = [col[0] / 140, col[1] / 140, col[2] / 140];
+    const big = ab.ultimate ? 1.9 : 1;
+
+    // The orb: starts loose and wide, converges to a dense point.
+    const r = lerp(0.62, 0.2, prog) * big * (1 + Math.sin(time * 26) * 0.05);
+    S.additive = true;
+    S.tint = cTint;
+    S.alpha = 0.3 + prog * 0.45;
+    matCompose(wx, wy, wz, 0, 0, time * 2, r, r, r, tmpMat);
+    drawMesh(dl, cam, auraSphere(), tmpMat, S);
+    // A second, denser shell in the same colour before the white core, so the
+    // orb reads as its colour rather than as a white dot with a halo.
+    S.alpha = 0.55 + prog * 0.3;
+    matCompose(wx, wy, wz, 0, 0, -time * 1.4, r * 0.62, r * 0.62, r * 0.62, tmpMat);
+    drawMesh(dl, cam, auraSphere(), tmpMat, S);
+    S.alpha = 0.85;
+    S.tint = [cTint[0] * 1.5 + 0.7, cTint[1] * 1.5 + 0.7, cTint[2] * 1.5 + 0.7];
+    const core = r * (0.18 + prog * 0.2);
+    matCompose(wx, wy, wz, 0, 0, -time * 3, core, core, core, tmpMat);
+    drawMesh(dl, cam, auraSphere(), tmpMat, S);
+
+    // Energy falling into it from every side, tighter as the cast finishes.
+    if (q.detail > 0) {
+      const n = ab.ultimate ? 10 : 6;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU + time * 3;
+        const rr = r * lerp(4.2, 1.3, prog);
+        const zz = Math.sin(a * 2 + time * 4) * r * 1.4;
+        S.alpha = 0.34 * (0.4 + prog * 0.6);
+        S.tint = cTint;
+        matCompose(wx + Math.cos(a) * rr, wy + Math.sin(a) * rr, wz + zz,
+          0, PI / 2, a + PI / 2, 0.035 * big, 0.035 * big, rr * 0.7, tmpMat);
+        drawMesh(dl, cam, auraBolt(), tmpMat, S);
+      }
+      // Rings compressing onto the orb.
+      for (let i = 0; i < 2; i++) {
+        const ph = ((time * 1.6 + i * 0.5) % 1);
+        const rr = r * lerp(3.6, 1.05, ph);
+        S.alpha = 0.4 * ph * (0.3 + prog * 0.7);
+        matCompose(wx, wy, wz, PI / 2.3 + i * 0.7, time * (1.2 + i), time * 0.6,
+          rr, rr, 1, tmpMat);
+        drawMesh(dl, cam, auraRing(), tmpMat, S);
+      }
+    }
+    S.additive = false;
+    S.alpha = fade;
+    S.tint = null;
   }
 
   // Charging a technique or a domain: energy gathering at the feet.
