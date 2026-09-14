@@ -418,11 +418,21 @@ export class Hud {
   }
 
   drawBossBars(ctx, world, W, H) {
-    const bosses = world.fighters.filter((f) => !f.dead && f.grade === 'special' && f.team !== world.player?.team && !f.isSummon);
+    const p = world.player;
+    if (!p) return;
+    // Only show special grades that are actually part of the fight in front of
+    // you — a free-for-all can have six on the board at once.
+    const bosses = world.fighters
+      .filter((f) => !f.dead && f.grade === 'special' && f.team !== p.team && !f.isSummon)
+      .map((f) => ({ f, d: vdist(f.pos, p.pos) }))
+      .filter((o) => o.d < 26 || o.f.id === p.lastHitBy || o.f.domain)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 2)
+      .map((o) => o.f);
     if (!bosses.length) return;
     ctx.save();
     let y = 74;
-    for (const b of bosses.slice(0, 3)) {
+    for (const b of bosses) {
       const w = Math.min(560, W * 0.55);
       const x = W / 2 - w / 2;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -448,7 +458,7 @@ export class Hud {
     ctx.save();
     ctx.textAlign = 'right';
     ctx.font = `600 11px ${FONT}`;
-    let y = 90;
+    let y = 186;   // clear of the minimap in the top-right corner
     for (const k of world.killFeed.slice(-5)) {
       ctx.globalAlpha = clamp01(k.t / 1.2);
       ctx.fillStyle = k.color;

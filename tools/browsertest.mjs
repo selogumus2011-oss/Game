@@ -18,8 +18,16 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 810 } });
 
+const IGNORE = [/fonts\.g(oogle)?apis/i, /fonts\.gstatic/i, /ERR_CONNECTION_RESET/i, /ERR_NAME_NOT_RESOLVED/i];
 page.on('console', (m) => {
-  if (m.type() === 'error') errors.push('console: ' + m.text());
+  if (m.type() !== 'error') return;
+  const text = m.text();
+  // Google Fonts is blocked in this sandbox; the page has local fallbacks.
+  if (IGNORE.some((re) => re.test(text))) return;
+  errors.push('console: ' + text);
+});
+page.on('requestfailed', (r) => {
+  if (!IGNORE.some((re) => re.test(r.url()))) errors.push('request failed: ' + r.url());
 });
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message + '\n' + (e.stack || '')));
 

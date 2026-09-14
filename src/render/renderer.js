@@ -580,6 +580,39 @@ export class Renderer {
         }
         break;
       }
+      case 'building': {
+        const h = base.y - top.y;
+        const w = r * 2.1;
+        const face = ctx.createLinearGradient(base.x - w / 2, 0, base.x + w / 2, 0);
+        face.addColorStop(0, shade(p.color, 0.55));
+        face.addColorStop(0.5, shade(p.color, 1.0));
+        face.addColorStop(1, shade(p.color, 0.45));
+        ctx.fillStyle = face;
+        ctx.fillRect(base.x - w / 2, top.y, w, h);
+        // Roof.
+        ctx.fillStyle = shade(p.color, 1.4);
+        ctx.beginPath();
+        ctx.moveTo(base.x - w / 2, top.y);
+        ctx.lineTo(base.x - w / 2 + r * 0.4, top.y - r * 0.45);
+        ctx.lineTo(base.x + w / 2 + r * 0.4, top.y - r * 0.45);
+        ctx.lineTo(base.x + w / 2, top.y);
+        ctx.closePath();
+        ctx.fill();
+        // Windows: a stable lit/dark pattern seeded from the prop id.
+        const cols = 4, rows = Math.max(2, Math.round(h / (r * 0.75)));
+        const wx = w / (cols + 1), wy = h / (rows + 1);
+        for (let cx2 = 0; cx2 < cols; cx2++) {
+          for (let ry = 0; ry < rows; ry++) {
+            const lit = ((p.id * 7 + cx2 * 13 + ry * 29) % 5) === 0;
+            ctx.fillStyle = lit ? hexA(p.emissive || '#ffd08a', 0.5) : 'rgba(0,0,0,0.45)';
+            ctx.fillRect(base.x - w / 2 + wx * (cx2 + 0.6), top.y + wy * (ry + 0.6), wx * 0.55, wy * 0.5);
+          }
+        }
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(base.x - w / 2, top.y, w, h);
+        break;
+      }
       case 'barrier': {
         const h = Math.max(10, base.y - top.y);
         ctx.fillStyle = shade(p.color, 1.05);
