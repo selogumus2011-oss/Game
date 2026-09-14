@@ -891,7 +891,12 @@ export class Fighter {
     this.anim.cast = 0;
     world.audio(ab.sfx || 'cast', { volume: 0.7 });
     world.fx('castCharge', { pos: this.pos, z: this.z, owner: this.id, color: this.technique.color, time: ab.castTime });
-    world.event({ type: 'abilityStart', fighter: this.id, ability: ab.id });
+    world.event({
+      type: 'abilityStart', fighter: this.id, ability: ab.id,
+      jp: ab.jp || '', label: ab.name, ultimate: !!ab.ultimate,
+      color: this.technique?.color || this.color,
+      pos: { x: this.pos.x, y: this.pos.y }, z: this.z + this.height + 0.4,
+    });
     return true;
   }
 

@@ -216,6 +216,10 @@ feedback:
 - **Opening name cards** introduce a duel, with both techniques named in kana.
 - **Domain Expansion cut-ins** — diagonal panels wipe in, the technique lands in
   calligraphy, and the caster's chant sits underneath it. Every domain has one.
+- **Technique call-outs**: every ability names itself in kana as it comes out,
+  and ultimates get a bigger stamp and a camera punch.
+- **Cast telegraphs**: a shrinking ring and a progress arc over any fighter
+  charging a technique, so there is a readable window to interrupt them.
 - **Impact frames**: radial manga speed lines and a colour wash on Black Flash,
   guard breaks, perfect parries and domain openings.
 - **Black Flash** inverts the screen, throws black lightning, scorches the
@@ -232,6 +236,55 @@ counter-balancing back arm. On top of that:
 - Weapon trails sample the blade tip and draw a tapered ribbon along the arc.
 - Casting and reverse cursed technique have their own poses, with cursed energy
   gathering visibly in the working palm.
+
+### Domains, in detail
+
+A domain is the biggest thing that happens in a fight, so it is staged rather
+than faded in:
+
+1. **Chant** — cursed energy spirals inward, a seal draws itself on the ground.
+2. **Slam** — a blinding core, then a ground ring racing outward ahead of the
+   barrier, tearing debris up as it goes.
+3. **Unfold** — the walls rise as ribs that knit into a surface, with latitude
+   rings closing over the top.
+4. **Reveal** — the interior treatment wipes outward from the caster behind a
+   glowing edge.
+5. **Held** — the per-domain interior, plus live state: the barrier brightens on
+   every sure-hit tick, **cracks appear exactly where it was struck** and heal
+   shut slowly, and a **clash seam** bows toward whoever is losing a contest
+   between two barriers.
+6. **Collapse** — a shatter throws panels off the whole hemisphere and then
+   implodes; a clean expiry drains the interior back into the caster.
+
+Each of the thirteen domains gets its own floor, dome and screen treatment:
+
+- **Unlimited Void** — a starfield floor under counter-rotating information
+  rings, an eye that opens on the dome, and glyph columns cascading down the
+  screen.
+- **Malevolent Shrine** — an open barrier: no walls, a skull-ringed ground, the
+  shrine itself standing over the arena with skulls swinging from the beam, and
+  a storm of *paired* cuts, because Dismantle arrives as a cross.
+- **Chimera Shadow Garden** — liquid shadow pooling and rolling, eyes opening
+  and blinking shut in the dark, shadow running down the inside of the walls.
+- **Self-Embodiment of Perfection** — souls drifting under the floor and hands
+  pressing out through the barrier.
+- **Coffin of the Iron Mountain** — breathing lava fissures, rock plates with
+  glowing seams, ash falling across the screen.
+- **Frozen Sanctuary** — a frost lattice creeping outward, shards growing out of
+  the ground, icicles hanging from the dome, frost closing in from the edges.
+- **Idle Death Gamble** — a peg field with balls falling through it and a reel
+  strip on the cabinet that locks to 7-7-7 on a pay-out.
+- **Authentic Mutual Love** — petals and a heartbeat that drives the whole
+  interior's pulse.
+- **Horizon of the Captivating Skandha** — water rolling outward forever, torii
+  receding toward a horizon line that never arrives, caustics on the screen.
+- **Flowing Red Sea**, **Cradle of Quiet Words**, **Chamber of Unknown Depths**
+  and **Deadly Sentencing** each get the same treatment: surface, walls, screen.
+
+Sure-hit is drawn explicitly — a tether runs from the dome to everyone the
+domain has designated, and turns into a dashed line with a guard ring when
+Simple Domain neutralises it. The HUD shows the barrier's integrity (your way
+out), time remaining, and a centre-out tug-of-war bar during a clash.
 
 ## Architecture
 

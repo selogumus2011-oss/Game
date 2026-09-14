@@ -52,6 +52,7 @@ export class Hud {
     this.drawCombo(ctx, world, p, W, H, dt);
     this.drawTopBar(ctx, world, W, H);
     this.drawBossBars(ctx, world, W, H);
+    this.drawDomainStatus(ctx, world, p, W, H);
     this.drawKillFeed(ctx, world, W, H);
     this.drawNotifications(ctx, world, W, H);
     this.drawBanners(ctx, world, W, H);
@@ -468,11 +469,101 @@ export class Hud {
     ctx.restore();
   }
 
+  /**
+   * Everything the player needs to read a domain at a glance: whose it is, how
+   * long it holds, how close the barrier is to breaking, whether the sure-hit
+   * is currently reaching them, and who is winning a clash.
+   */
+  drawDomainStatus(ctx, world, p, W, H) {
+    if (!world.domains.length) return;
+    const mine = world.domains.find((d) => d.ownerId === p.id);
+    const against = world.domains.find((d) => d.team !== p.team && d.contains(p.pos));
+    if (!mine && !against) return;
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    let y = 142;
+
+    const panel = (d, hostile) => {
+      const w = Math.min(460, W * 0.42);
+      const x = W / 2 - w / 2;
+      ctx.fillStyle = 'rgba(6,8,12,0.78)';
+      roundRect(ctx, x - 8, y - 18, w + 16, hostile ? 76 : 58, 8);
+      ctx.fill();
+      ctx.strokeStyle = hexA(d.spec.color, 0.5);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.font = `900 13px ${JP}`;
+      ctx.fillStyle = d.spec.color;
+      ctx.fillText(d.spec.jp, W / 2, y - 2);
+      ctx.font = `600 10px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillText(hostile ? `${d.owner?.name ?? '?'} — ${d.spec.name}` : d.spec.name, W / 2, y + 11);
+
+      // Labels above the bar so nothing overprints it.
+      ctx.font = `700 9px ${FONT}`;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillText(`BARRIER ${Math.round(Math.max(0, d.integrity))}`, x, y + 21);
+      ctx.textAlign = 'right';
+      const left = Math.max(0, d.duration - d.t);
+      ctx.fillText(`${left.toFixed(1)}s LEFT`, x + w, y + 21);
+      ctx.textAlign = 'center';
+
+      // Barrier integrity: for a hostile domain this is your escape route.
+      bar(ctx, x, y + 24, w, 9, d.integrityFrac, hostile ? '#ff8a4a' : d.spec.color, 1, '#ffffff');
+      // Duration track underneath.
+      bar(ctx, x, y + 35, w, 4, clamp01(1 - d.t / d.duration), 'rgba(255,255,255,0.35)', 0.8);
+
+      if (hostile) {
+        const guarded = p.simpleDomain.active;
+        ctx.font = `800 10px ${FONT}`;
+        ctx.fillStyle = guarded ? '#a8d8ff' : '#ff4d4d';
+        ctx.fillText(
+          guarded ? 'SURE-HIT NEUTRALISED — Simple Domain holding' : 'SURE-HIT — hold E for Simple Domain',
+          W / 2, y + 51);
+      }
+      y += hostile ? 92 : 74;
+    };
+
+    if (against) panel(against, true);
+    if (mine) panel(mine, false);
+
+    // Clash: a tug-of-war between two barriers.
+    const clashing = (mine && mine.clashWith) ? mine : null;
+    if (clashing) {
+      const w = Math.min(380, W * 0.34);
+      const x = W / 2 - w / 2;
+      const push = clamp(clashing.clashPressure / 3, -1, 1);
+      ctx.fillStyle = 'rgba(6,8,12,0.75)';
+      roundRect(ctx, x - 8, y - 16, w + 16, 40, 8);
+      ctx.fill();
+      ctx.font = `900 12px ${JP}`;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('領域対決  DOMAIN CLASH', W / 2, y - 2);
+      // Centre-out bar: right is you winning.
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      roundRect(ctx, x, y + 6, w, 10, 5);
+      ctx.fill();
+      const half = w / 2;
+      const len = Math.abs(push) * half;
+      ctx.fillStyle = push >= 0 ? '#8ef0bd' : '#ff4d4d';
+      ctx.fillRect(W / 2 + (push >= 0 ? 0 : -len), y + 6, len, 10);
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.fillRect(W / 2 - 1, y + 4, 2, 14);
+      ctx.font = `700 9px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.65)';
+      ctx.fillText(push >= 0 ? 'HOLD X TO PUSH — you are winning' : 'HOLD X TO PUSH — you are losing', W / 2, y + 30);
+    }
+    ctx.restore();
+  }
+
   drawKillFeed(ctx, world, W, H) {
     ctx.save();
     ctx.textAlign = 'right';
     ctx.font = `600 11px ${FONT}`;
-    let y = 186;   // clear of the minimap in the top-right corner
+    let y = 200;   // clear of the minimap in the top-right corner
     for (const k of world.killFeed.slice(-5)) {
       ctx.globalAlpha = clamp01(k.t / 1.2);
       ctx.fillStyle = k.color;

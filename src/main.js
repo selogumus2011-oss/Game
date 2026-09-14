@@ -362,6 +362,17 @@ class Game {
           size, weight, crit: !!ev.blackFlash || !!ev.crit,
         });
         if (ev.blackFlash && isPlayerAttacker) this.camera.punchZoom(0.22);
+      } else if (ev.type === 'abilityStart') {
+        // Name the technique as it comes out, the way the show does.
+        if (ev.jp) {
+          this.effects.sprite({
+            x: ev.pos.x, y: ev.pos.y, z: ev.z,
+            text: ev.jp, color: ev.color,
+            size: ev.ultimate ? 40 : 24, life: ev.ultimate ? 1.3 : 0.85,
+            style: ev.ultimate ? 'flash' : 'kanji',
+          });
+        }
+        if (ev.ultimate && w.player && ev.fighter === w.player.id) this.camera.punchZoom(0.12);
       } else if (ev.type === 'domainCast') {
         // Announce the expansion the moment the chant starts.
         const caster = w.byId(ev.fighter);

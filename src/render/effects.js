@@ -251,42 +251,111 @@ export class Effects {
         break;
 
       // --- domains --------------------------------------------------------
-      case 'domainCharge':
-        for (let i = 0; i < 20; i++) {
+      case 'domainCharge': {
+        // Cursed energy spiralling in, plus a seal drawing itself on the ground.
+        for (let i = 0; i < Math.round(26 * this.quality); i++) {
           const a = rand() * TAU;
-          const d = randRange(4, 9);
+          const d = randRange(5, 11);
+          const tangential = 5.5;
           this.particle({
-            x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d, z: randRange(0, 4),
-            vx: -Math.cos(a) * 6, vy: -Math.sin(a) * 6, vz: randRange(0.5, 2),
-            life: randRange(0.5, 1.0), size: 0.12, color: e.color || '#ffffff',
-            glow: 1, gravity: 0, drag: 0.6,
+            x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d, z: randRange(0, 4.5),
+            vx: -Math.cos(a) * 7 - Math.sin(a) * tangential,
+            vy: -Math.sin(a) * 7 + Math.cos(a) * tangential,
+            vz: randRange(1.5, 4),
+            life: randRange(0.5, 1.1), size: 0.13, color: e.color || '#ffffff',
+            glow: 1, gravity: -1.5, drag: 0.5, stretch: 0.5,
           });
         }
+        this.ring({ x: p.x, y: p.y, z: 0.03, r: 3.2, target: 1.1, life: 0.5, color: e.color || '#ffffff', width: 0.1, flat: true, alpha: 0.7 });
         break;
-      case 'domainOpen':
-        this.impact(0.85, e.color || '#ffffff', true, 0.6);
+      }
+      case 'domainOpen': {
+        const R = e.radius;
+        this.impact(0.95, e.color || '#ffffff', true, 0.65);
         this.flash(e.color || '#ffffff', 0.5, 0.6);
-        this.ring({ x: p.x, y: p.y, z: 0, r: 0.5, target: e.radius * 1.1, life: 1.0, color: e.color, width: 0.5, flat: true });
-        this.ring({ x: p.x, y: p.y, z: 2, r: 0.5, target: e.radius, life: 0.9, color: '#ffffff', width: 0.3, flat: false });
-        this.burst(p.x, p.y, 1, 80, {
-          color: e.color, speedMax: 16, lifeMax: 1.4, sizeMax: 0.3, glow: 1, gravity: -2,
+        this.flash('#ffffff', 0.35, 0.16);
+        // Ground shock racing out ahead of the barrier.
+        this.ring({ x: p.x, y: p.y, z: 0, r: 0.5, target: R * 1.25, life: 0.55, color: '#ffffff', width: 0.6, flat: true });
+        this.ring({ x: p.x, y: p.y, z: 0, r: 0.5, target: R * 1.05, life: 1.0, color: e.color, width: 0.45, flat: true });
+        this.ring({ x: p.x, y: p.y, z: 2, r: 0.5, target: R, life: 0.9, color: '#ffffff', width: 0.3, flat: false });
+        // A column of energy up the centre as the barrier locks.
+        for (let i = 0; i < Math.round(50 * this.quality); i++) {
+          const a = rand() * TAU;
+          const rr = randRange(0, R * 0.2);
+          this.particle({
+            x: p.x + Math.cos(a) * rr, y: p.y + Math.sin(a) * rr, z: randRange(0, 1),
+            vx: Math.cos(a) * 1.5, vy: Math.sin(a) * 1.5, vz: randRange(8, 22),
+            life: randRange(0.6, 1.3), size: randRange(0.1, 0.3), color: i % 3 ? e.color : '#ffffff',
+            glow: 1, gravity: 3, drag: 0.7,
+          });
+        }
+        // Debris torn off the ground along the expanding edge.
+        for (let i = 0; i < Math.round(40 * this.quality); i++) {
+          const a = rand() * TAU;
+          this.particle({
+            x: p.x + Math.cos(a) * R * randRange(0.55, 1), y: p.y + Math.sin(a) * R * randRange(0.55, 1), z: 0.1,
+            vx: Math.cos(a) * randRange(1, 5), vy: Math.sin(a) * randRange(1, 5), vz: randRange(3, 9),
+            life: randRange(0.7, 1.4), size: randRange(0.1, 0.3), color: e.color2 || '#8a8a7a',
+            glow: 0.2, gravity: 14, drag: 1, kind: 'chunk', spin: randRange(-6, 6),
+          });
+        }
+        this.burst(p.x, p.y, 1, 60, {
+          color: e.color, speedMax: 18, lifeMax: 1.4, sizeMax: 0.3, glow: 1, gravity: -2,
         });
         break;
-      case 'domainShatter':
+      }
+      case 'domainShatter': {
+        // The barrier comes apart in panels: shards distributed over the whole
+        // hemisphere, thrown outward, then an implosion as the space closes.
+        this.impact(1, e.color, true, 0.5);
         this.flash('#ffffff', 0.6, 0.35);
-        for (let i = 0; i < 60; i++) {
+        const R = e.radius;
+        for (let i = 0; i < Math.round(90 * this.quality); i++) {
+          const a = rand() * TAU;
+          const lat = Math.acos(randRange(0, 1));        // bias toward the ground
+          const rr = R * Math.sin(lat);
+          const zz = R * 0.9 * Math.cos(lat);
+          this.particle({
+            x: p.x + Math.cos(a) * rr, y: p.y + Math.sin(a) * rr, z: 0.2 + zz,
+            vx: Math.cos(a) * randRange(5, 18), vy: Math.sin(a) * randRange(5, 18),
+            vz: randRange(-1, 7),
+            life: randRange(0.8, 1.9), size: randRange(0.16, 0.5), color: i % 4 === 0 ? '#ffffff' : e.color,
+            glow: 0.75, gravity: 13, drag: 0.7, kind: 'shard', spin: randRange(-9, 9),
+          });
+        }
+        // Outward shock, then the space snapping shut.
+        this.ring({ x: p.x, y: p.y, z: 0, r: R * 0.2, target: R * 1.5, life: 0.5, color: '#ffffff', width: 0.5, flat: true });
+        this.ring({ x: p.x, y: p.y, z: R * 0.5, r: R * 0.2, target: R * 1.2, life: 0.45, color: e.color, width: 0.4, flat: false });
+        this.ring({ x: p.x, y: p.y, z: 0, r: R * 1.3, target: 0.4, life: 0.9, color: e.color, width: 0.3, flat: true });
+        for (let i = 0; i < Math.round(26 * this.quality); i++) {
           const a = rand() * TAU;
           this.particle({
-            x: p.x + Math.cos(a) * e.radius, y: p.y + Math.sin(a) * e.radius, z: randRange(0.5, 6),
-            vx: Math.cos(a) * randRange(4, 16), vy: Math.sin(a) * randRange(4, 16), vz: randRange(1, 7),
-            life: randRange(0.7, 1.6), size: randRange(0.14, 0.4), color: e.color,
-            glow: 0.8, gravity: 12, drag: 0.8, kind: 'shard', spin: randRange(-8, 8),
+            x: p.x + Math.cos(a) * R * 1.1, y: p.y + Math.sin(a) * R * 1.1, z: randRange(0.4, 4),
+            vx: -Math.cos(a) * randRange(6, 12), vy: -Math.sin(a) * randRange(6, 12), vz: randRange(0, 2),
+            life: randRange(0.5, 1.0), size: randRange(0.1, 0.24), color: '#ffffff',
+            glow: 1, gravity: 0, drag: 1.2,
+          });
+        }
+        this.decal({ x: p.x, y: p.y, r: R * 0.8, color: e.color2 || '#0a0a12', style: 'scorch', alpha: 0.4, life: 10 });
+        break;
+      }
+      case 'domainClose': {
+        // A controlled release: the interior drains back into the caster.
+        const R = e.radius;
+        this.ring({ x: p.x, y: p.y, z: 0, r: R, target: 0.3, life: 0.7, color: e.color, width: 0.3, flat: true });
+        this.ring({ x: p.x, y: p.y, z: R * 0.4, r: R, target: 0.3, life: 0.6, color: e.color, width: 0.2, flat: false });
+        for (let i = 0; i < Math.round(34 * this.quality); i++) {
+          const a = rand() * TAU;
+          const rr = R * Math.sqrt(rand());
+          this.particle({
+            x: p.x + Math.cos(a) * rr, y: p.y + Math.sin(a) * rr, z: randRange(0.2, R * 0.6),
+            vx: -Math.cos(a) * rr * 1.5, vy: -Math.sin(a) * rr * 1.5, vz: randRange(-0.5, 1.5),
+            life: randRange(0.4, 0.9), size: randRange(0.08, 0.2), color: e.color,
+            glow: 0.9, gravity: 0, drag: 0.4,
           });
         }
         break;
-      case 'domainClose':
-        this.ring({ x: p.x, y: p.y, z: 0, r: e.radius, target: 0.3, life: 0.6, color: e.color, width: 0.3, flat: true });
-        break;
+      }
       case 'clashSpark':
         this.burst(p.x, p.y, randRange(0.5, 3), 4, { color: e.color || '#ffffff', speedMax: 8, lifeMax: 0.3, glow: 1 });
         break;

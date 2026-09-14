@@ -6,7 +6,7 @@ import {
 } from '../core/math.js';
 import { FLATTEN, HEIGHT } from './camera.js';
 import { drawFighter, drawShadow, drawAura, hexA, shade } from './characters.js';
-import { drawDomainFloor, drawDomainDome, drawDomainOverlay } from './domainVisuals.js';
+import { drawDomainFloor, drawDomainDome, drawDomainOverlay, setDomainQuality } from './domainVisuals.js';
 import { SIMPLE_DOMAIN_RADIUS } from '../sim/fighter.js';
 import { glowSprite, softSprite, blit } from './sprites.js';
 import { flashWindowPhase } from '../sim/combat.js';
@@ -66,7 +66,10 @@ export class Renderer {
   autoQuality(fps) {
     this._fpsAvg = this._fpsAvg * 0.92 + fps * 0.08;
     const q = this._fpsAvg < 34 ? 0.35 : this._fpsAvg < 46 ? 0.7 : 1;
-    if (q !== this.quality) this.quality = q;
+    if (q !== this.quality) {
+      this.quality = q;
+      setDomainQuality(q);
+    }
   }
 
   _makeGrain() {
@@ -786,6 +789,34 @@ export class Renderer {
       ctx.stroke();
       ctx.globalCompositeOperation = 'source-over';
     }
+    if (f.state === 'cast' && f.cast) {
+      // A shrinking ring while a technique charges: the window to interrupt.
+      const ab = f.cast.ability;
+      const dur = Math.max(0.01, ab.castTime || 0.2);
+      const prog = clamp01(f.cast.t / dur);
+      const col = ab.ultimate ? '#ff4d4d' : (f.technique?.color || '#ffd166');
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const rr = lerp(2.6, 0.8, prog) * cam.scale;
+      ctx.strokeStyle = hexA(col, 0.25 + prog * 0.5);
+      ctx.lineWidth = 2 + prog * 3;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, rr, rr * FLATTEN, 0, 0, TAU);
+      ctx.stroke();
+      // Arc above the head showing how far along the cast is.
+      ctx.strokeStyle = hexA(col, 0.85);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(p.x, top - 16, 9, -PI / 2, -PI / 2 + prog * TAU);
+      ctx.stroke();
+      if (ab.ultimate) {
+        ctx.font = `800 9px system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ff6b6b';
+        ctx.fillText('MAX', p.x, top - 28);
+      }
+      ctx.restore();
+    }
     if (f.state === 'domainCast') {
       const prog = clamp01(f.domainCast ? f.domainCast.t / f.domainCast.dur : 0);
       ctx.strokeStyle = '#ff4d4d';
@@ -873,6 +904,150 @@ export class Renderer {
           ctx.fill();
         }
         break;
+      case 'ice':
+        // A crystal shard aligned with its flight path.
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(pr.angle);
+        ctx.fillStyle = hexA('#d8f4ff', 0.9);
+        ctx.beginPath();
+        ctx.moveTo(r * 2.4, 0);
+        ctx.lineTo(0, -r * 0.8);
+        ctx.lineTo(-r * 1.2, 0);
+        ctx.lineTo(0, r * 0.8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = hexA('#ffffff', 0.8);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+        break;
+      case 'bolt': {
+        // Lightning: a jagged line redrawn every frame.
+        ctx.strokeStyle = hexA('#ffffff', 0.95);
+        ctx.lineWidth = Math.max(1.5, r * 0.4);
+        ctx.beginPath();
+        for (let i = 0; i <= 6; i++) {
+          const t = i / 6;
+          const off = i === 0 || i === 6 ? 0 : (rand() - 0.5) * r * 3;
+          const x = p.x - Math.cos(pr.angle) * r * 4 * (1 - t) + -Math.sin(pr.angle) * off;
+          const y = p.y - Math.sin(pr.angle) * r * 4 * FLATTEN * (1 - t) + Math.cos(pr.angle) * off * FLATTEN;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.strokeStyle = hexA(pr.color, 0.6);
+        ctx.lineWidth = Math.max(3, r);
+        ctx.stroke();
+        break;
+      }
+      case 'shard':
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(pr.angle + t * 6);
+        ctx.fillStyle = pr.color;
+        ctx.fillRect(-r * 1.6, -r * 0.35, r * 3.2, r * 0.7);
+        ctx.restore();
+        break;
+      case 'missile':
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(pr.angle);
+        ctx.fillStyle = pr.color;
+        ctx.beginPath();
+        ctx.moveTo(r * 1.8, 0);
+        ctx.lineTo(-r * 1.2, -r * 0.55);
+        ctx.lineTo(-r * 1.2, r * 0.55);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = hexA('#ffb03a', 0.8);
+        ctx.beginPath();
+        ctx.arc(-r * 1.5, 0, r * 0.5 * (0.7 + Math.sin(t * 40) * 0.3), 0, TAU);
+        ctx.fill();
+        ctx.restore();
+        break;
+      case 'sphere':
+        // Constructed steel: a solid ball with a hard highlight.
+        ctx.fillStyle = '#5a4a2a';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = hexA(pr.glow || '#ffffff', 0.8);
+        ctx.beginPath();
+        ctx.arc(p.x - r * 0.3, p.y - r * 0.3, r * 0.3, 0, TAU);
+        ctx.fill();
+        break;
+      case 'wave':
+        // A wall of water: a wide crescent facing the direction of travel.
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(pr.angle);
+        ctx.fillStyle = hexA(pr.color, 0.7);
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 1.5, -1.25, 1.25);
+        ctx.arc(0, 0, r * 0.5, 1.25, -1.25, true);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = hexA('#ffffff', 0.6);
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+        ctx.restore();
+        break;
+      case 'dragon': {
+        // A long body drawn along its own trail.
+        ctx.strokeStyle = hexA(pr.color, 0.85);
+        ctx.lineCap = 'round';
+        for (let pass = 0; pass < 2; pass++) {
+          ctx.lineWidth = r * (pass ? 0.8 : 1.8);
+          ctx.strokeStyle = hexA(pass ? '#ffffff' : pr.color, pass ? 0.5 : 0.85);
+          ctx.beginPath();
+          for (let i = 0; i < pr.trail.length; i++) {
+            const q = cam.project(pr.trail[i].x, pr.trail[i].y, pr.trail[i].z);
+            if (i === 0) ctx.moveTo(q.x, q.y);
+            else ctx.lineTo(q.x, q.y);
+          }
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+        }
+        ctx.fillStyle = hexA('#ffffff', 0.9);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r * 0.6, 0, TAU);
+        ctx.fill();
+        break;
+      }
+      case 'uzumaki':
+      case 'supernova': {
+        // Compressed mass: nested counter-rotating spirals.
+        for (let k = 0; k < 3; k++) {
+          ctx.strokeStyle = hexA(k % 2 ? '#ffffff' : pr.color, 0.5);
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          for (let i = 0; i <= 30; i++) {
+            const th = (i / 30) * TAU * 1.6 + t * (k % 2 ? 4 : -4) + k;
+            const rr = r * (0.25 + (i / 30) * 0.95);
+            const x = p.x + Math.cos(th) * rr;
+            const y = p.y + Math.sin(th) * rr * FLATTEN;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'fire_arrow':
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(pr.angle);
+        for (let i = 0; i < 7; i++) {
+          const off = -i * r * 0.8;
+          const k = 1 - i / 7;
+          ctx.fillStyle = hexA(i < 2 ? '#fff0c0' : pr.color, 0.55 * k);
+          ctx.beginPath();
+          ctx.ellipse(off, Math.sin(t * 30 + i) * r * 0.2, r * 1.1 * k, r * 0.8 * k, 0, 0, TAU);
+          ctx.fill();
+        }
+        ctx.restore();
+        break;
       default:
         ctx.fillStyle = hexA('#ffffff', 0.85);
         ctx.beginPath();
@@ -925,26 +1100,113 @@ export class Renderer {
     ctx2.save();
     ctx2.globalCompositeOperation = 'lighter';
 
-    // Beams.
+    // Beams — each technique's line is drawn the way that technique cuts.
     for (const b of fx.beams) {
       const a = clamp01(b.life / b.max);
       const p1 = cam.project(b.from.x, b.from.y, b.z);
       const p2 = cam.project(b.to.x, b.to.y, b.z);
       const w = b.width * cam.scale * (0.4 + a * 0.8);
-      const grd = ctx2.createLinearGradient(p1.x, p1.y, p2.x, p2.y);
-      grd.addColorStop(0, hexA(b.color, 0.15 * a));
-      grd.addColorStop(0.25, hexA(b.color, 0.85 * a));
-      grd.addColorStop(1, hexA('#ffffff', 0.2 * a));
-      ctx2.strokeStyle = grd;
-      ctx2.lineCap = 'round';
-      ctx2.lineWidth = w;
-      ctx2.beginPath();
-      ctx2.moveTo(p1.x, p1.y);
-      ctx2.lineTo(p2.x, p2.y);
-      ctx2.stroke();
-      ctx2.strokeStyle = hexA('#ffffff', 0.9 * a);
-      ctx2.lineWidth = Math.max(1, w * 0.28);
-      ctx2.stroke();
+      const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      const nx = -Math.sin(ang), ny = Math.cos(ang);
+      const line = (off, width, col, alpha) => {
+        ctx2.strokeStyle = hexA(col, alpha);
+        ctx2.lineCap = 'round';
+        ctx2.lineWidth = Math.max(0.8, width);
+        ctx2.beginPath();
+        ctx2.moveTo(p1.x + nx * off, p1.y + ny * off);
+        ctx2.lineTo(p2.x + nx * off, p2.y + ny * off);
+        ctx2.stroke();
+      };
+
+      switch (b.style) {
+        case 'dismantle':
+          // Three parallel cuts, the middle one deepest.
+          line(-w * 0.7, w * 0.22, b.color, 0.6 * a);
+          line(0, w * 0.4, b.color, 0.9 * a);
+          line(w * 0.7, w * 0.22, b.color, 0.6 * a);
+          line(0, w * 0.12, '#ffffff', a);
+          break;
+        case 'cleave': {
+          // One heavy cut with a torn, uneven edge.
+          ctx2.fillStyle = hexA(b.color, 0.75 * a);
+          ctx2.beginPath();
+          const steps = 10;
+          for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const edge = w * 0.5 * (0.5 + noise1(i * 1.7, 4) * 0.9) * Math.sin(t * PI);
+            ctx2.lineTo(lerp(p1.x, p2.x, t) + nx * edge, lerp(p1.y, p2.y, t) + ny * edge);
+          }
+          for (let i = steps; i >= 0; i--) {
+            const t = i / steps;
+            const edge = -w * 0.5 * (0.5 + noise1(i * 2.3, 9) * 0.9) * Math.sin(t * PI);
+            ctx2.lineTo(lerp(p1.x, p2.x, t) + nx * edge, lerp(p1.y, p2.y, t) + ny * edge);
+          }
+          ctx2.closePath();
+          ctx2.fill();
+          line(0, w * 0.16, '#ffffff', a);
+          break;
+        }
+        case 'worldcut': {
+          // A cut aimed at the world: huge, with the air folding around it.
+          const grd = ctx2.createLinearGradient(p1.x, p1.y, p2.x, p2.y);
+          grd.addColorStop(0, hexA(b.color, 0.1 * a));
+          grd.addColorStop(0.3, hexA(b.color, 0.9 * a));
+          grd.addColorStop(1, hexA('#ffffff', 0.5 * a));
+          ctx2.strokeStyle = grd;
+          ctx2.lineCap = 'butt';
+          ctx2.lineWidth = w * (1.4 + (1 - a) * 1.2);
+          ctx2.beginPath();
+          ctx2.moveTo(p1.x, p1.y);
+          ctx2.lineTo(p2.x, p2.y);
+          ctx2.stroke();
+          line(0, w * 0.3, '#ffffff', a);
+          // Displaced air on either side.
+          for (const side of [-1, 1]) {
+            ctx2.strokeStyle = hexA('#ffffff', 0.25 * a);
+            ctx2.lineWidth = 1.5;
+            ctx2.beginPath();
+            for (let i = 0; i <= 12; i++) {
+              const t = i / 12;
+              const bulge = side * w * (1.2 + Math.sin(t * PI) * 1.6) * (1 - a * 0.4);
+              const x = lerp(p1.x, p2.x, t) + nx * bulge;
+              const y = lerp(p1.y, p2.y, t) + ny * bulge;
+              if (i === 0) ctx2.moveTo(x, y);
+              else ctx2.lineTo(x, y);
+            }
+            ctx2.stroke();
+          }
+          break;
+        }
+        case 'blood_beam': {
+          // A pressurised jet, narrow and fast, shedding droplets.
+          line(0, w * 0.5, b.color, 0.85 * a);
+          line(0, w * 0.16, '#ffd8dc', a);
+          for (let i = 0; i < 8; i++) {
+            const t = (i / 8 + (1 - a)) % 1;
+            const off = (noise1(i * 3.1, 6) - 0.5) * w * 2.4;
+            ctx2.fillStyle = hexA(b.color, 0.7 * a);
+            ctx2.beginPath();
+            ctx2.arc(lerp(p1.x, p2.x, t) + nx * off, lerp(p1.y, p2.y, t) + ny * off, 2.2, 0, TAU);
+            ctx2.fill();
+          }
+          break;
+        }
+        default: {
+          const grd = ctx2.createLinearGradient(p1.x, p1.y, p2.x, p2.y);
+          grd.addColorStop(0, hexA(b.color, 0.15 * a));
+          grd.addColorStop(0.25, hexA(b.color, 0.85 * a));
+          grd.addColorStop(1, hexA('#ffffff', 0.2 * a));
+          ctx2.strokeStyle = grd;
+          ctx2.lineCap = 'round';
+          ctx2.lineWidth = w;
+          ctx2.beginPath();
+          ctx2.moveTo(p1.x, p1.y);
+          ctx2.lineTo(p2.x, p2.y);
+          ctx2.stroke();
+          line(0, w * 0.28, '#ffffff', 0.9 * a);
+          break;
+        }
+      }
     }
 
     // Slash arcs.

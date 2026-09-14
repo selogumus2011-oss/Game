@@ -13,7 +13,7 @@
 //   6. Kill the caster      — they are drained and stationary the whole time
 
 import {
-  clamp, clamp01, lerp, vdist, vsub, vnorm, vangle, vfromAngle, TAU,
+  clamp, clamp01, lerp, vdist, vsub, vnorm, vangle, vfromAngle, wrapAngle, TAU,
 } from '../core/math.js';
 import { addStatus, removeStatus } from './status.js';
 
@@ -44,7 +44,21 @@ export class Domain {
     this.clashPressure = 0;
     this.summonTimer = 0;
     this.flashT = 0;
+
+    // --- presentation state the renderer reads --------------------------
+    // The expansion is staged rather than a single lerp: the barrier slams
+    // out along the ground, the walls unfold, and only then does it settle.
+    this.phase = 'opening';
+    this.openDur = 0.62;
+    this.cracks = [];        // {angle, len, t, max} — where the barrier was hit
+    this.clashSeam = null;   // {x, y, angle, pressure}
+    this.pulse = 0;          // flashes when the sure-hit ticks
+    this.stress = 0;         // 0..1, rises as integrity falls or on impact
   }
+
+  /** 0..1 progress of the expansion animation. */
+  get openProgress() { return clamp01(this.t / this.openDur); }
+  get integrityFrac() { return clamp01(this.integrity / this.maxIntegrity); }
 
   get power() {
     const o = this.owner;
@@ -60,7 +74,21 @@ export class Domain {
   update(dt, world) {
     this.t += dt;
     this.flashT += dt;
+    this.pulse = Math.max(0, this.pulse - dt * 3.4);
+    this.stress = Math.max(0, this.stress - dt * 1.6);
+    if (this.phase === 'opening' && this.t >= this.openDur) this.phase = 'held';
+
+    // Radius snaps out fast, then eases the last of the way.
+    const snap = clamp01(this.t / 0.3);
+    const target = this.targetRadius * (0.2 + 0.8 * (1 - Math.pow(1 - snap, 4)));
+    this.radius = Math.max(this.radius, target);
     this.radius = lerp(this.radius, this.targetRadius, 1 - Math.exp(-7 * dt));
+
+    // Cracks heal shut slowly while the barrier holds.
+    for (let i = this.cracks.length - 1; i >= 0; i--) {
+      this.cracks[i].t -= dt * (this.integrityFrac > 0.5 ? 0.35 : 0.1);
+      if (this.cracks[i].t <= 0) this.cracks.splice(i, 1);
+    }
 
     const owner = this.owner;
     if (!owner || owner.dead) { this.close('caster down'); return; }
@@ -88,6 +116,7 @@ export class Domain {
     if (this.tickTimer <= 0) {
       this.tickTimer = 0.25;
       this.tickCount++;
+      this.pulse = 1;
       this.applySureHit(world, 0.25);
       if (this.spec.onTick) this.spec.onTick({ world, owner, domain: this, tickCount: this.tickCount });
     }
@@ -228,13 +257,25 @@ export class Domain {
       if (vdist(d.center, this.center) < d.radius + this.radius) { other = d; break; }
     }
     this.clashWith = other;
-    if (!other) { this.clashPressure = 0; return; }
+    if (!other) { this.clashPressure = 0; this.clashSeam = null; return; }
 
     // Both barriers push; the difference in power decides who loses integrity.
     const mine = this.power + (this.owner.intent.domainPush ? 0.35 : 0);
     const theirs = other.power + (other.owner.intent.domainPush ? 0.35 : 0);
     const delta = mine - theirs;
     this.clashPressure = clamp(delta, -3, 3);
+    // Where the two barriers meet, for the seam the renderer draws.
+    {
+      const a = vangle(vsub(other.center, this.center));
+      const gap = vdist(other.center, this.center);
+      const push = clamp(delta * 0.6, -2.5, 2.5);
+      const at = clamp(gap * (this.radius / Math.max(0.1, this.radius + other.radius)) + push, 1, gap);
+      this.clashSeam = {
+        x: this.center.x + Math.cos(a) * at,
+        y: this.center.y + Math.sin(a) * at,
+        angle: a, pressure: delta,
+      };
+    }
     if (delta < 0) this.integrity += delta * 26 * dt;
     // Contact between two barriers erodes both.
     this.integrity -= 8 * dt;
@@ -256,6 +297,19 @@ export class Domain {
 
   damageBarrier(amount, source) {
     this.integrity -= amount;
+    this.stress = Math.min(1, this.stress + amount / Math.max(20, this.maxIntegrity * 0.12));
+    // Record where it was struck so the barrier visibly fractures there.
+    if (amount > 3) {
+      const angle = source ? vangle(vsub(source.pos, this.center)) : this.world.rng.angle();
+      const near = this.cracks.find((c) => Math.abs(wrapAngle(c.angle - angle)) < 0.3);
+      if (near) {
+        near.len = Math.min(1, near.len + amount / 90);
+        near.t = near.max;
+      } else {
+        this.cracks.push({ angle, len: clamp01(amount / 70), t: 6, max: 6 });
+        if (this.cracks.length > 14) this.cracks.shift();
+      }
+    }
     if (this.integrity <= 0) this.shatter(source);
   }
 
@@ -266,7 +320,8 @@ export class Domain {
     world.shake(24, 1.0);
     world.slowmo(0.25, 0.6);
     world.fx('domainShatter', {
-      pos: { x: this.center.x, y: this.center.y }, radius: this.radius, color: this.spec.color,
+      pos: { x: this.center.x, y: this.center.y }, radius: this.radius,
+      color: this.spec.color, color2: this.spec.color2, visual: this.spec.visual,
     });
     world.banner('領域崩壊', `${this.spec.name} shattered`, '#ff4d4d', 1.6);
     // Backlash: losing your own domain hurts.
@@ -291,7 +346,9 @@ export class Domain {
     for (const f of world.fighters) if (f.insideDomain === this) f.insideDomain = null;
     world.event({ type: 'domainClose', domain: this.spec.id, reason, owner: this.ownerId });
     world.fx('domainClose', {
-      pos: { x: this.center.x, y: this.center.y }, radius: this.radius, color: this.spec.color,
+      pos: { x: this.center.x, y: this.center.y }, radius: this.radius,
+      color: this.spec.color, color2: this.spec.color2, visual: this.spec.visual,
+      reason,
     });
   }
 }
