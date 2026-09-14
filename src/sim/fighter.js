@@ -327,10 +327,32 @@ export class Fighter {
     return true;
   }
 
+  /** The light chain this fighter actually owns. Curses and shikigami have
+   *  their own movesets (claw, bite, tail whip) rather than the human chain. */
+  lightChain() {
+    if (this.basicActions && this.basicActions !== LIGHT_CHAIN && this.basicActions.length) {
+      return this.basicActions.filter((id) => {
+        const a = ACTIONS[id];
+        return a && a.kind !== 'heavy';
+      });
+    }
+    return LIGHT_CHAIN;
+  }
+
+  /** The heavy option this fighter owns, if any. */
+  heavyAction() {
+    if (this.basicActions && this.basicActions !== LIGHT_CHAIN && this.basicActions.length) {
+      const heavy = this.basicActions.find((id) => ACTIONS[id] && ACTIONS[id].kind === 'heavy');
+      return heavy || this.basicActions[this.basicActions.length - 1];
+    }
+    return null;
+  }
+
   /** Advance the light chain (or start it). */
   pressLight() {
     const airborne = this.z > 0.35;
-    const chainList = airborne ? AIR_CHAIN : LIGHT_CHAIN;
+    const own = this.lightChain();
+    const chainList = airborne && own === LIGHT_CHAIN ? AIR_CHAIN : own;
     if (this.state === 'attack' && this.action) {
       const cur = this.action.def;
       const nextId = cur.next;
@@ -340,12 +362,19 @@ export class Fighter {
       return false;
     }
     if (!this.canAct()) return false;
-    if (this.state === 'dash' && this.stateTime < 0.22) return this.startAction('dashAttack');
-    return this.startAction(chainList[0]);
+    if (chainList.length === 0) return false;
+    if (this.state === 'dash' && this.stateTime < 0.22 && own === LIGHT_CHAIN) return this.startAction('dashAttack');
+    // Curses with several attacks pick one at random rather than chaining.
+    const pick = own === LIGHT_CHAIN || airborne
+      ? chainList[0]
+      : chainList[Math.floor((this.world?.rng.next() ?? 0) * chainList.length)];
+    return this.startAction(pick);
   }
 
   pressHeavy(charged) {
     if (!this.canAct()) return false;
+    const own = this.heavyAction();
+    if (own) return this.startAction(own);
     if (this.z > 0.35) return this.startAction('airFinish');
     return this.startAction(charged ? 'heavyCharged' : 'heavy');
   }

@@ -94,6 +94,20 @@ export class World {
     }
     // Clear a spawn pocket at the centre.
     this.props = this.props.filter((p) => vlen(p.pos) > 5 || p.type === 'building');
+
+    // Static ground detail — cracks, stains, painted markings. Generated once
+    // from the seeded RNG so the arena is stable and the renderer stays cheap.
+    this.groundMarks = [];
+    const n = Math.round(this.arenaRadius * 2.6);
+    for (let i = 0; i < n; i++) {
+      const ang = this.rng.angle();
+      const r = Math.sqrt(this.rng.next()) * (this.arenaRadius - 2);
+      this.groundMarks.push({
+        x: Math.cos(ang) * r, y: Math.sin(ang) * r,
+        r: this.rng.range(0.4, 1.8), a: this.rng.angle(),
+        kind: this.rng.next(), tone: this.rng.range(-1, 1),
+      });
+    }
   }
 
   addFighter(spec) {

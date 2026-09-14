@@ -1,0 +1,739 @@
+// HUD: resource bars, the Black Flash timing ring, ability rack, domain state,
+// combo counter, banners, kill feed and the minimap.
+
+import { clamp, clamp01, lerp, TAU, PI, vdist } from '../core/math.js';
+import { hexA } from './characters.js';
+import { flashWindowPhase, FLASH } from '../sim/combat.js';
+import { FLATTEN, HEIGHT } from './camera.js';
+import { STATUS_META } from '../sim/status.js';
+
+const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+const JP = '"Noto Sans JP", system-ui, sans-serif';
+
+export class Hud {
+  constructor() {
+    this.time = 0;
+    this.hpSmooth = 1;
+    this.ceSmooth = 1;
+    this.hpChip = 1;
+    this.comboShake = 0;
+    this.showControls = true;
+    this.controlsFade = 14;
+  }
+
+  draw(ctx, world, cam, W, H, dt) {
+    this.time += dt;
+    const p = world.player;
+    if (!p) return;
+
+    this.hpSmooth = lerp(this.hpSmooth, p.hpFraction, 1 - Math.exp(-14 * dt));
+    this.hpChip = lerp(this.hpChip, p.hpFraction, 1 - Math.exp(-3 * dt));
+    this.ceSmooth = lerp(this.ceSmooth, p.ceFraction, 1 - Math.exp(-16 * dt));
+
+    ctx.save();
+    ctx.textBaseline = 'alphabetic';
+
+    this.drawFlashRing(ctx, world, cam, p);
+    this.drawVitals(ctx, world, p, W, H);
+    this.drawAbilities(ctx, world, p, W, H);
+    this.drawDefensives(ctx, world, p, W, H);
+    this.drawCombo(ctx, world, p, W, H, dt);
+    this.drawTopBar(ctx, world, W, H);
+    this.drawBossBars(ctx, world, W, H);
+    this.drawKillFeed(ctx, world, W, H);
+    this.drawNotifications(ctx, world, W, H);
+    this.drawBanners(ctx, world, W, H);
+    this.drawMinimap(ctx, world, cam, W, H);
+    this.drawStatuses(ctx, p, W, H);
+    if (this.controlsFade > 0) {
+      this.controlsFade -= dt;
+      this.drawControlsHint(ctx, W, H, clamp01(this.controlsFade / 3));
+    }
+    if (world.over) this.drawResult(ctx, world, W, H);
+
+    ctx.restore();
+  }
+
+  // -------------------------------------------------------------------------
+  // Black Flash timing ring — the most important widget in the game.
+  // -------------------------------------------------------------------------
+
+  drawFlashRing(ctx, world, cam, p) {
+    const phase = flashWindowPhase(p);
+    const pos = cam.project(p.pos.x, p.pos.y, p.z);
+    const cx = pos.x;
+    const cy = pos.y - p.height * cam.scale * HEIGHT - 34;
+    const r = 26;
+
+    if (!phase) {
+      // Idle: a faint hint that the mechanic exists.
+      if (p.timeSinceDealt < 4) {
+        ctx.save();
+        ctx.globalAlpha = 0.14;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+      }
+      return;
+    }
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // Track.
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, TAU);
+    ctx.stroke();
+
+    // The band: hitting inside this is a Black Flash.
+    const a0 = -PI / 2 + phase.bandStart * TAU;
+    const a1 = -PI / 2 + phase.bandEnd * TAU;
+    const inBand = phase.t >= phase.bandStart && phase.t <= phase.bandEnd;
+    ctx.strokeStyle = inBand ? '#ff2d2d' : 'rgba(255,45,45,0.55)';
+    ctx.lineWidth = inBand ? 9 : 6;
+    ctx.shadowColor = '#ff2d2d';
+    ctx.shadowBlur = inBand ? 22 : 8;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, a0, a1);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Needle.
+    const na = -PI / 2 + phase.t * TAU;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(na) * (r - 9), Math.sin(na) * (r - 9));
+    ctx.lineTo(Math.cos(na) * (r + 9), Math.sin(na) * (r + 9));
+    ctx.stroke();
+
+    // Chain counter.
+    if (phase.chain > 0) {
+      ctx.font = `900 15px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff2d2d';
+      ctx.fillText('×' + phase.chain, 0, 5);
+    }
+    if (inBand) {
+      ctx.globalAlpha = 0.9;
+      ctx.font = `800 11px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('NOW', 0, r + 20);
+    }
+    ctx.restore();
+  }
+
+  // -------------------------------------------------------------------------
+
+  drawVitals(ctx, world, p, W, H) {
+    const x = 26;
+    const y = H - 118;
+    const w = 300;
+
+    // Portrait block.
+    ctx.save();
+    ctx.fillStyle = 'rgba(10,12,16,0.72)';
+    roundRect(ctx, x - 12, y - 34, w + 24, 118, 10);
+    ctx.fill();
+    ctx.strokeStyle = hexA(p.technique?.color || '#ffffff', 0.25);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.font = `700 14px ${FONT}`;
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText(p.name, x, y - 14);
+    const nameW = ctx.measureText(p.name).width;
+    ctx.font = `500 11px ${FONT}`;
+    ctx.fillStyle = hexA(p.technique?.color || '#ffffff', 0.8);
+    ctx.fillText(p.technique ? `${p.technique.name} · ${p.technique.jp}` : 'No technique', x + nameW + 12, y - 14);
+
+    // Health.
+    bar(ctx, x, y, w, 14, this.hpChip, '#5a1520', 1);
+    bar(ctx, x, y, w, 14, this.hpSmooth, p.hasStatus('glassCannon') ? '#ff2d2d' : '#e64a52', 1, '#ff9a9a');
+    ctx.font = `700 11px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillText(`${Math.ceil(Math.max(0, p.hp))} / ${Math.round(p.maxHp)}`, x + 6, y + 11);
+
+    // Cursed energy.
+    if (p.maxCe > 0) {
+      const ceCol = p.flags.burnout ? '#7a5a2a' : '#3aa0ff';
+      bar(ctx, x, y + 20, w, 11, this.ceSmooth, ceCol, 1, '#9fd8ff');
+      ctx.font = `700 10px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillText(`呪力 ${Math.round(p.ce)}`, x + 6, y + 29);
+      // Reinforcement read-out: how much damage your energy is eating.
+      ctx.textAlign = 'right';
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.fillText(`reinforce ${Math.round(p.reinforcement * 100)}%`, x + w - 6, y + 29);
+      ctx.textAlign = 'left';
+    } else {
+      ctx.font = `700 10px ${FONT}`;
+      ctx.fillStyle = 'rgba(220,225,235,0.7)';
+      ctx.fillText('天与呪縛 — no cursed energy', x + 2, y + 29);
+    }
+
+    // Flow / domain readiness.
+    const flowCol = p.flow >= 0.5 ? '#ff8a3a' : '#8a6a4a';
+    bar(ctx, x, y + 36, w, 8, p.flow, flowCol, 1, '#ffd08a');
+    ctx.font = `700 9px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillText(`FLOW ${Math.round(p.flow * 100)}%`, x + 5, y + 43);
+    if (p.flow >= 0.5 && p.domainSpec()) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#ffd166';
+      ctx.fillText('DOMAIN READY [X]', x + w - 5, y + 43);
+      ctx.textAlign = 'left';
+    }
+
+    // Poise / guard.
+    bar(ctx, x, y + 49, w, 6, clamp01(p.poise / p.maxPoise), '#c8a24a', 0.85);
+
+    // Throat strain (Cursed Speech only).
+    if (p.techniqueId === 'cursedSpeech') {
+      bar(ctx, x, y + 58, w, 6, clamp01(p.throat / 100), p.throat > 70 ? '#ff4d4d' : '#c86a6a', 0.9);
+      ctx.font = `700 9px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillText('THROAT', x + 4, y + 64);
+    }
+
+    // Wounds.
+    if (p.wounds.arms > 0 || p.wounds.legs > 0) {
+      ctx.font = `700 10px ${FONT}`;
+      ctx.fillStyle = '#ff8a8a';
+      const parts = [];
+      if (p.wounds.arms > 0) parts.push(`ARMS ${Math.round(p.wounds.arms * 100)}%`);
+      if (p.wounds.legs > 0) parts.push(`LEGS ${Math.round(p.wounds.legs * 100)}%`);
+      ctx.fillText('WOUNDED · ' + parts.join(' · '), x, y + 74);
+    }
+    ctx.restore();
+  }
+
+  drawAbilities(ctx, world, p, W, H) {
+    const abilities = p.abilityList();
+    const size = 52;
+    const gap = 8;
+    const total = abilities.length * (size + gap) - gap;
+    const x0 = W / 2 - total / 2;
+    const y = H - 76;
+
+    ctx.save();
+    for (let i = 0; i < abilities.length; i++) {
+      const ab = abilities[i];
+      const x = x0 + i * (size + gap);
+      const ready = p.abilityReady(i);
+      const cd = p.cooldowns['ab' + i] || 0;
+      const cdFrac = cd > 0 ? clamp01(cd / (ab.cooldown || 1)) : 0;
+
+      ctx.fillStyle = ready ? 'rgba(18,22,30,0.9)' : 'rgba(12,14,18,0.85)';
+      roundRect(ctx, x, y, size, size, 8);
+      ctx.fill();
+      ctx.strokeStyle = ready ? hexA(p.technique?.color || '#ffffff', 0.8) : 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = ready ? 2 : 1;
+      ctx.stroke();
+
+      // Cooldown sweep.
+      if (cdFrac > 0) {
+        ctx.save();
+        ctx.beginPath();
+        roundRect(ctx, x, y, size, size, 8);
+        ctx.clip();
+        ctx.fillStyle = 'rgba(0,0,0,0.66)';
+        ctx.fillRect(x, y, size, size * cdFrac);
+        ctx.restore();
+        ctx.font = `800 15px ${FONT}`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(cd.toFixed(1), x + size / 2, y + size / 2 + 5);
+      } else {
+        ctx.font = `800 18px ${JP}`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = ready ? (p.technique?.color || '#ffffff') : 'rgba(255,255,255,0.28)';
+        const glyph = (ab.jp || ab.name).slice(0, 2);
+        ctx.fillText(glyph, x + size / 2, y + size / 2 + 4);
+      }
+
+      // Key + cost.
+      ctx.font = `700 9px ${FONT}`;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.fillText(String(i + 1), x + 5, y + 12);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = p.canAfford(ab.cost) ? 'rgba(120,200,255,0.85)' : 'rgba(255,120,120,0.85)';
+      ctx.fillText(String(Math.round(ab.cost * p.costMultiplier())), x + size - 5, y + size - 5);
+      if (ab.ultimate) {
+        ctx.fillStyle = '#ffd166';
+        ctx.textAlign = 'right';
+        ctx.fillText('MAX', x + size - 5, y + 12);
+      }
+      // Name underneath, clipped to the card so neighbours never collide.
+      ctx.font = `600 9px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillText(fitText(ctx, shortName(ab.name), size + gap - 2), x + size / 2, y + size + 12);
+    }
+    ctx.restore();
+  }
+
+  drawDefensives(ctx, world, p, W, H) {
+    const x = W - 26;
+    const y = H - 118;
+    const items = [
+      {
+        key: 'E', label: 'Simple Domain', jp: '簡易領域',
+        active: p.simpleDomain.active,
+        ready: p.maxCe > 0 && p.ce > 12,
+        color: '#a8d8ff',
+        note: p.simpleDomain.mastered ? 'MASTERED' : '',
+      },
+      {
+        key: 'Z', label: 'Amplification', jp: '領域展延',
+        active: p.amplify.active,
+        ready: p.maxCe > 0 && p.canAfford(30),
+        color: '#cfa8ff',
+        note: p.amplify.active ? p.amplify.t.toFixed(1) + 's' : '',
+      },
+      {
+        key: 'R', label: 'Reverse CT', jp: '反転術式',
+        active: p.state === 'rct',
+        ready: p.stats.rct > 0 && !p.flags.noRct && p.ce > 2,
+        color: '#8ef0bd',
+        note: p.flags.noRct ? 'VOW' : (p.stats.rct <= 0 ? 'N/A' : ''),
+      },
+      {
+        key: 'X', label: 'Domain Expansion', jp: '領域展開',
+        active: !!p.domain,
+        ready: p.domainReady(),
+        color: p.technique?.domain?.color || '#ffffff',
+        note: p.domainBlockReason(),
+      },
+    ];
+
+    ctx.save();
+    ctx.textAlign = 'right';
+    let yy = y;
+    for (const it of items) {
+      const alpha = it.active ? 1 : (it.ready ? 0.85 : 0.32);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = it.active ? hexA(it.color, 0.22) : 'rgba(10,12,16,0.6)';
+      roundRect(ctx, x - 252, yy - 13, 252, 24, 6);
+      ctx.fill();
+      ctx.strokeStyle = it.active ? it.color : hexA('#ffffff', 0.1);
+      ctx.lineWidth = it.active ? 1.6 : 1;
+      ctx.stroke();
+
+      ctx.font = `800 10px ${FONT}`;
+      ctx.fillStyle = it.color;
+      ctx.textAlign = 'left';
+      ctx.fillText(it.key, x - 244, yy + 4);
+      ctx.font = `600 11px ${FONT}`;
+      ctx.fillStyle = it.active ? '#ffffff' : 'rgba(255,255,255,0.75)';
+      ctx.fillText(fitText(ctx, it.label, 114), x - 228, yy + 4);
+      if (it.note && !it.ready) {
+        ctx.font = `500 9px ${FONT}`;
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(255,160,160,0.8)';
+        ctx.fillText(fitText(ctx, it.note, 100), x - 8, yy + 4);
+      }
+      yy += 28;
+    }
+    ctx.globalAlpha = 1;
+
+    // Tool.
+    ctx.textAlign = 'right';
+    ctx.font = `700 11px ${FONT}`;
+    ctx.fillStyle = hexA(p.tool?.color || '#ffffff', 0.9);
+    ctx.fillText(`[C] ${p.tool?.name || 'Bare Hands'}`, x, yy + 6);
+    ctx.restore();
+  }
+
+  drawCombo(ctx, world, p, W, H, dt) {
+    if (p.combo.count < 2) { this.comboShake = 0; return; }
+    const x = W - 60;
+    const y = H * 0.36;
+    this.comboShake = lerp(this.comboShake, 0, 1 - Math.exp(-8 * dt));
+    if (p.timeSinceDealt < 0.05) this.comboShake = 1;
+    const sh = this.comboShake * 5;
+
+    ctx.save();
+    ctx.textAlign = 'right';
+    ctx.translate(Math.sin(this.time * 60) * sh, 0);
+    const scale = 1 + this.comboShake * 0.14;
+    ctx.font = `900 ${Math.round(42 * scale)}px ${FONT}`;
+    ctx.fillStyle = p.combo.count >= 20 ? '#ff2d2d' : p.combo.count >= 10 ? '#ffd166' : '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 8;
+    ctx.fillText(String(p.combo.count), x, y);
+    ctx.font = `700 13px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText('HITS', x, y + 16);
+    ctx.font = `600 11px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText(`${Math.round(p.combo.damage)} dmg`, x, y + 32);
+    // Combo timer.
+    const frac = clamp01(p.combo.timer / 2.2);
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.fillRect(x - 90 * frac, y + 38, 90 * frac, 3);
+    ctx.restore();
+  }
+
+  drawTopBar(ctx, world, W, H) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.font = `700 12px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    const mins = Math.floor(world.matchTime / 60);
+    const secs = Math.floor(world.matchTime % 60);
+    ctx.fillText(`${mins}:${String(secs).padStart(2, '0')}`, W / 2, 26);
+
+    let sub = '';
+    if (world.mode === 'gauntlet') sub = `WAVE ${world.wave}`;
+    else if (world.mode === 'culling') sub = `${world.aliveCount ?? '?'} REMAIN · VEIL ${Math.round(world.veilRadius)}m`;
+    else if (world.mode === 'duel') sub = 'DUEL';
+    else sub = 'TRAINING';
+    ctx.font = `800 11px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fillText(sub, W / 2, 42);
+
+    if (world.score) {
+      ctx.font = `700 11px ${FONT}`;
+      ctx.fillStyle = '#ffd166';
+      ctx.fillText(`${Math.round(world.score)} pts`, W / 2, 58);
+    }
+
+    // Deadline vow.
+    const p = world.player;
+    if (p && p.deadlineTimer != null) {
+      ctx.font = `900 20px ${FONT}`;
+      ctx.fillStyle = p.deadlineTimer < 20 ? '#ff2d2d' : '#ffd166';
+      ctx.fillText(`束縛 ${p.deadlineTimer.toFixed(1)}`, W / 2, 84);
+    }
+    ctx.restore();
+  }
+
+  drawBossBars(ctx, world, W, H) {
+    const bosses = world.fighters.filter((f) => !f.dead && f.grade === 'special' && f.team !== world.player?.team && !f.isSummon);
+    if (!bosses.length) return;
+    ctx.save();
+    let y = 74;
+    for (const b of bosses.slice(0, 3)) {
+      const w = Math.min(560, W * 0.55);
+      const x = W / 2 - w / 2;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      roundRect(ctx, x - 2, y - 2, w + 4, 20, 4);
+      ctx.fill();
+      bar(ctx, x, y, w, 16, b.hpFraction, '#8a1020', 1, '#ff5a5a');
+      ctx.font = `800 12px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(`${b.name} — 特級`, W / 2, y + 12);
+      if (b.domain) {
+        ctx.font = `700 10px ${FONT}`;
+        ctx.fillStyle = '#ff4d4d';
+        ctx.fillText(`領域展開 — barrier ${Math.round(b.domain.integrity)} / ${Math.round(b.domain.maxIntegrity)}`, W / 2, y + 30);
+        y += 16;
+      }
+      y += 30;
+    }
+    ctx.restore();
+  }
+
+  drawKillFeed(ctx, world, W, H) {
+    ctx.save();
+    ctx.textAlign = 'right';
+    ctx.font = `600 11px ${FONT}`;
+    let y = 90;
+    for (const k of world.killFeed.slice(-5)) {
+      ctx.globalAlpha = clamp01(k.t / 1.2);
+      ctx.fillStyle = k.color;
+      ctx.fillText(k.text, W - 26, y);
+      y += 16;
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  drawNotifications(ctx, world, W, H) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    let y = H * 0.3;
+    for (const n of world.notifications) {
+      const a = clamp01(n.t / 0.6);
+      ctx.globalAlpha = a;
+      ctx.font = `800 15px ${FONT}`;
+      ctx.fillStyle = n.color;
+      ctx.shadowColor = 'rgba(0,0,0,0.9)';
+      ctx.shadowBlur = 6;
+      ctx.fillText(n.text, W / 2, y);
+      y += 22;
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  drawBanners(ctx, world, W, H) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    for (const b of world.banners) {
+      const t = 1 - b.t / b.max;
+      const inA = clamp01(t / 0.12);
+      const outA = clamp01(b.t / 0.35);
+      const a = Math.min(inA, outA);
+      ctx.globalAlpha = a;
+      const yy = H * 0.26 + (1 - inA) * -20;
+      ctx.font = `900 ${Math.round(58 + inA * 6)}px ${JP}`;
+      ctx.fillStyle = b.color;
+      ctx.shadowColor = b.color;
+      ctx.shadowBlur = 26;
+      ctx.fillText(b.jp, W / 2, yy);
+      ctx.shadowBlur = 0;
+      ctx.font = `700 16px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillText(b.en, W / 2, yy + 26);
+      // Underline sweep.
+      ctx.fillStyle = hexA(b.color, 0.7);
+      const lw = 260 * clamp01(t * 3);
+      ctx.fillRect(W / 2 - lw / 2, yy + 36, lw, 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  drawMinimap(ctx, world, cam, W, H) {
+    const size = 132;
+    const x = W - size - 26;
+    const y = 26;
+    const scale = size / (world.arenaRadius * 2.1);
+    const cx = x + size / 2;
+    const cy = y + size / 2;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(8,10,14,0.7)';
+    roundRect(ctx, x, y, size, size, 8);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, x, y, size, size, 8);
+    ctx.clip();
+
+    // Veil.
+    const vr = (world.mode === 'culling' ? world.veilRadius : world.arenaRadius) * scale;
+    ctx.strokeStyle = 'rgba(255,80,110,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, vr, 0, TAU);
+    ctx.stroke();
+
+    // Props.
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    for (const p of world.props) {
+      if (p.destroyed) continue;
+      ctx.fillRect(cx + p.pos.x * scale - 1, cy + p.pos.y * scale - 1, 2, 2);
+    }
+    // Domains.
+    for (const d of world.domains) {
+      ctx.strokeStyle = hexA(d.spec.color, 0.7);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx + d.center.x * scale, cy + d.center.y * scale, d.radius * scale, 0, TAU);
+      ctx.stroke();
+    }
+    // Fighters.
+    for (const f of world.fighters) {
+      if (f.dead) continue;
+      const fx = cx + f.pos.x * scale;
+      const fy = cy + f.pos.y * scale;
+      if (f.isPlayer) {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(fx + Math.cos(f.facing) * 5, fy + Math.sin(f.facing) * 5);
+        ctx.lineTo(fx + Math.cos(f.facing + 2.4) * 4, fy + Math.sin(f.facing + 2.4) * 4);
+        ctx.lineTo(fx + Math.cos(f.facing - 2.4) * 4, fy + Math.sin(f.facing - 2.4) * 4);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.fillStyle = f.team === world.player?.team ? '#6fd4c4'
+          : f.grade === 'special' ? '#ff4d4d' : '#e8a0a0';
+        ctx.beginPath();
+        ctx.arc(fx, fy, f.grade === 'special' ? 3.4 : 2.2, 0, TAU);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+    ctx.restore();
+  }
+
+  drawStatuses(ctx, p, W, H) {
+    if (!p.statuses.length) return;
+    ctx.save();
+    const x = 26;
+    let y = H - 178;
+    ctx.textAlign = 'left';
+    for (const s of p.statuses.slice(0, 8)) {
+      const meta = STATUS_META[s.type] || { name: s.type, color: '#ffffff' };
+      const frac = clamp01(s.time / Math.max(0.01, s.maxTime || 1));
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      roundRect(ctx, x, y - 10, 128, 14, 3);
+      ctx.fill();
+      ctx.fillStyle = hexA(meta.color, 0.35);
+      ctx.fillRect(x, y - 10, 128 * frac, 14);
+      ctx.font = `700 9px ${FONT}`;
+      ctx.fillStyle = meta.color;
+      const label = s.power > 1 && s.type === 'fragment' ? `${meta.name} ×${s.power}` : meta.name;
+      ctx.fillText(label, x + 5, y);
+      y -= 17;
+    }
+    ctx.restore();
+  }
+
+  drawControlsHint(ctx, W, H, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.75;
+    ctx.textAlign = 'left';
+    ctx.font = `600 11px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    const lines = [
+      'WASD  move          Mouse  aim',
+      'LMB   light  ·  hold for heavy',
+      'RMB   block  ·  TAP = PARRY',
+      'Shift dash   Space jump   F grab',
+      '1-4   cursed technique',
+      'E     Simple Domain',
+      'Z     Domain Amplification',
+      'R     Reverse Cursed Technique',
+      'X     Domain Expansion',
+      'V     binding vow    C  cursed tool',
+      'T     lock-on        Tab codex   Esc pause',
+      '',
+      'BLACK FLASH — land your next hit',
+      'while the red band on the ring is lit.',
+    ];
+    const boxW = 268;
+    let y = H * 0.30;
+    ctx.fillStyle = 'rgba(6,8,12,0.55)';
+    roundRect(ctx, 18, y - 20, boxW, lines.length * 15 + 16, 8);
+    ctx.fill();
+    ctx.font = `600 11px ${FONT}`;
+    for (const l of lines) {
+      ctx.fillStyle = l.startsWith('BLACK') ? '#ff6b6b' : 'rgba(255,255,255,0.8)';
+      ctx.fillText(l, 28, y - 4);
+      y += 15;
+    }
+    ctx.restore();
+  }
+
+  drawResult(ctx, world, W, H) {
+    const r = world.result;
+    if (!r) return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(4,5,8,0.78)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.font = `900 72px ${JP}`;
+    ctx.fillStyle = r.victory ? '#8ef0bd' : '#ff4d4d';
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 30;
+    ctx.fillText(r.victory ? '祓除完了' : '敗北', W / 2, H / 2 - 60);
+    ctx.shadowBlur = 0;
+    ctx.font = `700 20px ${FONT}`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(r.message, W / 2, H / 2 - 24);
+
+    const st = r.player || {};
+    const rows = [
+      ['Time', `${Math.floor(r.time / 60)}:${String(Math.floor(r.time % 60)).padStart(2, '0')}`],
+      ['Damage dealt', String(st.damage ?? 0)],
+      ['Exorcised', String(st.kills ?? 0)],
+      ['Black Flashes', String(st.blackFlashes ?? 0)],
+      ['Best chain', `×${st.bestChain ?? 0}`],
+      ['Perfect parries', String(st.parries ?? 0)],
+      ['Longest combo', String(r.stats.maxCombo ?? 0)],
+      ['Domains opened', String(r.stats.domains ?? 0)],
+      ['Score', String(Math.round(r.score))],
+    ];
+    ctx.font = `600 14px ${FONT}`;
+    let y = H / 2 + 12;
+    for (const [k, v] of rows) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillText(k, W / 2 - 12, y);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(v, W / 2 + 12, y);
+      y += 21;
+    }
+    ctx.textAlign = 'center';
+    ctx.font = `700 13px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText('Press ENTER to return to the menu', W / 2, y + 24);
+    ctx.restore();
+  }
+}
+
+// --- helpers ----------------------------------------------------------------
+
+function bar(ctx, x, y, w, h, frac, color, alpha = 1, highlight) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  roundRect(ctx, x, y, w, h, h / 2);
+  ctx.fill();
+  const fw = Math.max(0, w * clamp01(frac));
+  if (fw > 1) {
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, x, y, w, h, h / 2);
+    ctx.clip();
+    const g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, highlight || color);
+    g.addColorStop(0.5, color);
+    g.addColorStop(1, shadeHex(color, 0.7));
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y, fw, h);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+/** Trim a label with an ellipsis until it fits `maxW` pixels. */
+function fitText(ctx, text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+  return t + '…';
+}
+
+/** Drop a qualifier prefix so "Open: Fire Arrow" reads as "Fire Arrow". */
+function shortName(name) {
+  const i = name.indexOf(': ');
+  return i > 0 && i < name.length - 4 ? name.slice(i + 2) : name;
+}
+
+function shadeHex(hex, mul) {
+  if (!hex || hex[0] !== '#') return hex;
+  const h = hex.slice(1);
+  const p = h.length === 3
+    ? h.split('').map((c) => parseInt(c + c, 16))
+    : [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  return `rgb(${p.map((v) => Math.round(clamp(v * mul, 0, 255))).join(',')})`;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}

@@ -3,7 +3,7 @@
 
 export const ARENAS = {
   shibuya: {
-    id: 'shibuya', name: 'Shibuya Station, Halloween', jp: '渋谷事変',
+    id: 'shibuya', floor: 'tiles', name: 'Shibuya Station, Halloween', jp: '渋谷事変',
     size: 56,
     ground: '#14161c', groundAlt: '#1b1e27', grid: '#22262f',
     fog: '#0a0b10', fogDensity: 0.55,
@@ -19,7 +19,7 @@ export const ARENAS = {
     desc: 'Underground concourse under a sealed veil. Tight sightlines, hard pillars, and nowhere civilians could have gone.',
   },
   jujutsuHigh: {
-    id: 'jujutsuHigh', name: 'Jujutsu High Training Grounds', jp: '呪術高専',
+    id: 'jujutsuHigh', floor: 'grass', name: 'Jujutsu High Training Grounds', jp: '呪術高専',
     size: 60,
     ground: '#161d18', groundAlt: '#1c261e', grid: '#26332a',
     fog: '#0c110d', fogDensity: 0.3,
@@ -34,7 +34,7 @@ export const ARENAS = {
     desc: 'Open training ground behind the school. Good sightlines, soft cover, and the trees do not stop much.',
   },
   shrine: {
-    id: 'shrine', name: 'Ruined Shrine', jp: '廃神社',
+    id: 'shrine', floor: 'stone', name: 'Ruined Shrine', jp: '廃神社',
     size: 50,
     ground: '#1d1414', groundAlt: '#241919', grid: '#2e2020',
     fog: '#120909', fogDensity: 0.6,
@@ -49,7 +49,7 @@ export const ARENAS = {
     desc: 'The King of Curses kept a shrine here once. Something in the ground still remembers it.',
   },
   cullingIsland: {
-    id: 'cullingIsland', name: 'Culling Game Colony', jp: '死滅回游',
+    id: 'cullingIsland', floor: 'asphalt', name: 'Culling Game Colony', jp: '死滅回游',
     size: 96,
     ground: '#161a20', groundAlt: '#1d2229', grid: '#252b34',
     fog: '#090c11', fogDensity: 0.45,
@@ -65,7 +65,7 @@ export const ARENAS = {
     desc: 'A sealed colony with a shrinking barrier and nine other players. Points for kills. No rules beyond the ones you swore to.',
   },
   void: {
-    id: 'void', name: 'Training Void', jp: '無の間',
+    id: 'void', floor: 'void', name: 'Training Void', jp: '無の間',
     size: 44,
     ground: '#101218', groundAlt: '#151822', grid: '#1e2330',
     fog: '#06070b', fogDensity: 0.25,
