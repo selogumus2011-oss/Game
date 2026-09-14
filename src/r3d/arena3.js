@@ -14,6 +14,16 @@ import { shade, cached } from './models3.js';
 const tmp = new Float32Array(16);
 const tmp2 = new Float32Array(16);
 
+/**
+ * Arena palettes are authored for a flat 2D wash, where the colour you write is
+ * the colour that lands on screen. Under real lighting the same values are
+ * multiplied by a shading term and a grade, and a floor written as #161d18
+ * comes out as near-black. Everything the arena supplies is lifted on the way
+ * into the 3D renderer so the authored colour is what the lit surface reads as.
+ */
+const LIFT = 1.6;
+const lift = (c, k = LIFT) => shade(c || '#202020', k);
+
 // ---------------------------------------------------------------------------
 // Ground
 // ---------------------------------------------------------------------------
@@ -127,7 +137,7 @@ export function drawGround3(dl, cam, world, S, q) {
   const step = q.detail > 1 ? 2.5 : 3.5;
   const near = q.detail > 1 ? 24 : 18;
   const far = q.detail > 0 ? 78 : 50;
-  const pal = [a.ground, a.groundAlt, a.grid];
+  const pal = [lift(a.ground), lift(a.groundAlt), lift(a.grid, LIFT * 1.35)];
 
   S.additive = false;
   S.tint = null;
@@ -141,7 +151,7 @@ export function drawGround3(dl, cam, world, S, q) {
   // Ground marks: static scuffs baked by the sim's seeded RNG. They sit just
   // above the floor, and are small enough that their centroids sort cleanly.
   if (q.detail > 0 && world.groundMarks) {
-    const mark = cached(`mark:${a.grid}`, () => disc(1, 10, shade(a.grid, 1.45), 0));
+    const mark = cached(`mark:${a.grid}`, () => disc(1, 10, lift(a.grid, LIFT * 1.7), 0));
     for (const m of world.groundMarks) {
       if (Math.hypot(m.x - cx, m.y - cy) > near * 0.85) continue;
       if (insideDomain(world, m.x, m.y)) continue;
@@ -287,7 +297,8 @@ const PROP_BUILDERS = {
 
 function propMesh(p) {
   const build = PROP_BUILDERS[p.type] || PROP_BUILDERS.pillar;
-  return cached(`prop:${p.type}:${p.color}:${p.emissive || ''}`, () => build(p));
+  return cached(`prop:${p.type}:${p.color}:${p.emissive || ''}`,
+    () => build({ ...p, color: lift(p.color, 1.55) }));
 }
 
 export function drawProps3(dl, cam, world, S, q, time) {
@@ -312,7 +323,7 @@ export function drawProps3(dl, cam, world, S, q, time) {
     matCompose(p.pos.x, p.pos.y, 0, tiltX, tiltY, p.rot, sx, sx, p.height, tmp);
     S.tint = dmg > 0.3 ? [1 - dmg * 0.25, 1 - dmg * 0.35, 1 - dmg * 0.35] : null;
     drawMesh(dl, cam, mesh, tmp, S);
-    if (q.outlines && q.detail > 1) drawOutline(dl, cam, mesh, tmp, 1.015, [10, 10, 14]);
+    if (q.outlines && q.detail > 1) drawOutline(dl, cam, mesh, tmp, 1, [10, 10, 14], 1.8);
   }
   S.tint = null;
   S.fogNear = undefined;
@@ -376,13 +387,13 @@ export function drawSky(ctx, cam, arena, w, h) {
   let g = skyCache.get(key);
   if (!g) {
     g = ctx.createLinearGradient(0, 0, 0, h);
-    const horizon = arena.fog || '#0a0b10';
-    const top = arena.timeOfDay === 'dusk' ? shade(arena.light || '#cfe0b0', 0.35)
-      : arena.timeOfDay === 'void' ? '#0a0c14'
-      : shade(arena.ground || '#14161c', 0.7);
+    const horizon = lift(arena.fog || '#0a0b10', 2.2);
+    const top = arena.timeOfDay === 'dusk' ? shade(arena.light || '#cfe0b0', 0.5)
+      : arena.timeOfDay === 'void' ? '#141a2a'
+      : lift(arena.ground || '#14161c', 1.9);
     g.addColorStop(0, top);
     g.addColorStop(0.62, horizon);
-    g.addColorStop(1, shade(horizon, 0.6));
+    g.addColorStop(1, shade(horizon, 0.72));
     skyCache.set(key, g);
     if (skyCache.size > 12) skyCache.clear();
   }

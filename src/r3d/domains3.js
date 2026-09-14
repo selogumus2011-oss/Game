@@ -536,7 +536,7 @@ const STYLES3 = {
       const sx = cx, sy = cy - R * 0.42;
       matCompose(sx, sy, 0.06, sway, sway, 0, grow, grow, grow, tmp);
       drawMesh(env.dl, env.cam, mesh, tmp, S);
-      if (env.q.outlines) drawOutline(env.dl, env.cam, mesh, tmp, 1.01, [14, 6, 6]);
+      if (env.q.outlines) drawOutline(env.dl, env.cam, mesh, tmp, 1, [14, 6, 6], 2.2);
 
       // The furnace glow in the shrine's mouth.
       S.additive = true;
@@ -859,7 +859,7 @@ const STYLES3 = {
       S.tint = [1, 0.96, 1];
       matCompose(cx, cy - R * 0.58, 0.06, 0, 0, PI / 2, 1, 1, 1, tmp);
       drawMesh(env.dl, env.cam, bench, tmp, S);
-      if (env.q.outlines) drawOutline(env.dl, env.cam, bench, tmp, 1.01, [10, 8, 14]);
+      if (env.q.outlines) drawOutline(env.dl, env.cam, bench, tmp, 1, [10, 8, 14], 2.2);
 
       // Gallery pews facing the bench.
       const pew = cached('courtPew', () => {

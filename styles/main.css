@@ -312,3 +312,51 @@ html, body {
   .stat-grid { grid-template-columns: 1fr; }
   .title-mark { font-size: 96px; }
 }
+
+/* --------------------------------------------------------------------- */
+/* Touch devices — iPad and phones                                        */
+/* --------------------------------------------------------------------- */
+
+/* The canvas fills the visual viewport rather than 100vh, which on iOS
+   Safari is the *largest* viewport and leaves the bottom of the game under
+   the browser chrome. dvh tracks the bar as it collapses. */
+@supports (height: 100dvh) {
+  #game { height: 100dvh; }
+}
+
+html, body {
+  /* Stop the rubber-band scroll and the double-tap zoom that otherwise fire
+     over the canvas, and keep iOS from re-flowing text at its own scale. */
+  position: fixed;
+  width: 100%;
+  touch-action: none;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#ui {
+  /* Keep menus clear of the notch, the home indicator and rounded corners. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* A finger is not a cursor: everything tappable gets a real target size, and
+   hover styling is dropped where hovering does not exist. */
+@media (pointer: coarse) {
+  #game { cursor: none; }
+  .menu-btn { padding: 15px 18px; min-height: 52px; }
+  .menu-btn:hover { transform: none; }
+  button, .card, .toggle, input[type="range"] { touch-action: manipulation; }
+  input[type="range"] { height: 34px; }
+  .card { min-height: 64px; }
+}
+
+/* Landscape tablets and phones: the screens are laid out for a tall window,
+   so let them scroll and tighten the vertical rhythm instead of clipping. */
+@media (max-height: 560px) {
+  #ui { align-items: flex-start; }
+  .screen { padding-top: 12px; padding-bottom: 12px; }
+}

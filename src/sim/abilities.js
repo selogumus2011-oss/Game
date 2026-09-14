@@ -100,6 +100,9 @@ function castBeam(ctx) {
     world.fx('beam', {
       from, to, width: ability.width || 1, color: ability.color || self.technique?.color,
       vfx: ability.vfx || 'beam', life: 0.28,
+      // Where the line actually connected, so a slash can be drawn on whoever
+      // it cut rather than at the arbitrary midpoint of its reach.
+      focus: hits.length ? { x: hits[0].pos.x, y: hits[0].pos.y, z: hits[0].z + hits[0].height * 0.55 } : null,
     });
     // Beams scar the arena.
     for (const prop of world.props) {

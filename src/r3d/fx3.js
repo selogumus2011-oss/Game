@@ -17,6 +17,7 @@ import { insideDomain } from './arena3.js';
 import { glowSprite, softSprite } from '../render/sprites.js';
 
 const tmp = new Float32Array(16);
+const tmpDir = new Float32Array(16);
 const proj = { x: 0, y: 0, d: 0 };
 const proj2 = { x: 0, y: 0, d: 0 };
 
@@ -69,6 +70,7 @@ export function drawEffects3(dl, cam, fx, S, q, time, world) {
   drawDecals3(dl, cam, fx, S, world);
   drawRings3(dl, cam, fx, S, time);
   drawArcs3(dl, cam, fx, S);
+  drawCuts3(dl, cam, fx, S);
   drawBeams3(dl, cam, fx, S, time);
   drawBolts3(dl, cam, fx);
   drawParticles3(dl, cam, fx, q);
@@ -155,6 +157,88 @@ function drawArcs3(dl, cam, fx, S) {
   }
   S.alpha = 1;
 }
+
+/**
+ * A cut, in three stages.
+ *
+ *   FLASH   a hairline the full length of the cut, white-hot, two frames
+ *   HOLD    nothing moves; this is the beat that makes the cut land
+ *   OPEN    the gap spreads apart, its edges glowing, and a dark void shows
+ *           between them — the space the cut took out of the world
+ *
+ * The plane is built once as a unit quad and stretched, so a lattice of a dozen
+ * cuts costs a dozen matrices.
+ */
+const cutQuad = () => cached('fxCut', () => {
+  const b = new MeshBuilder();
+  const v = (x, y, z) => b.vert(x, y, z);
+  b.quad(v(-0.5, 0, -0.5), v(0.5, 0, -0.5), v(0.5, 0, 0.5), v(-0.5, 0, 0.5),
+    '#ffffff', true, 1);
+  return b.build();
+});
+
+function drawCuts3(dl, cam, fx, S) {
+  for (const c of fx.cuts) {
+    if (c.delay > 0) continue;
+    if (!cam.visible(c.x, c.y, c.z, c.len * 0.6)) continue;
+    const k = clamp01(c.life / c.max);          // 1 at birth, 0 at death
+    const age = 1 - k;
+    const mesh = cutQuad();
+    const tint = tintOf(c.color, 1.7);
+
+    // FLASH: a hairline at full length, before anything has moved.
+    if (age < 0.16) {
+      const f = 1 - age / 0.16;
+      S.alpha = f;
+      S.tint = [2.4, 2.4, 2.4];
+      matCompose(c.x, c.y, c.z, c.tilt, c.lean, c.angle,
+        c.len, 1, 0.05 + f * 0.08, tmp);
+      drawMesh(dl, cam, mesh, tmp, S);
+      continue;
+    }
+
+    // OPEN: two lit edges parting, with the void between them.
+    const open = easeOut(clamp01((age - 0.16) / 0.5));
+    const fade = clamp01(k / 0.55);
+    const gap = open * c.width;
+
+    // The direction the two halves part in is the cut plane's own thin axis,
+    // which is the image of local +z under the composed rotation. Taking it
+    // from a unit matrix avoids re-deriving it by hand for every combination of
+    // roll, lean and heading.
+    matCompose(0, 0, 0, c.tilt, c.lean, c.angle, 1, 1, 1, tmpDir);
+    const ux = tmpDir[2], uy = tmpDir[6], uz = tmpDir[10];
+
+    // The void: darkness where the world used to be.
+    S.additive = false;
+    S.alpha = fade * 0.85;
+    S.tint = [0.05, 0.02, 0.04];
+    matCompose(c.x, c.y, c.z, c.tilt, c.lean, c.angle, c.len, 1, Math.max(0.02, gap), tmp);
+    drawMesh(dl, cam, mesh, tmp, S);
+
+    // The two edges.
+    S.additive = true;
+    S.tint = tint;
+    for (const s of [1, -1]) {
+      S.alpha = fade;
+      matCompose(c.x + ux * gap * 0.5 * s, c.y + uy * gap * 0.5 * s, c.z + uz * gap * 0.5 * s,
+        c.tilt, c.lean, c.angle, c.len, 1, 0.14, tmp);
+      drawMesh(dl, cam, mesh, tmp, S);
+    }
+    // A white core along the middle for the first part of the opening.
+    if (open < 0.7) {
+      S.alpha = fade * (1 - open / 0.7);
+      S.tint = [2.6, 2.6, 2.7];
+      matCompose(c.x, c.y, c.z, c.tilt, c.lean, c.angle, c.len, 1, 0.1, tmp);
+      drawMesh(dl, cam, mesh, tmp, S);
+    }
+  }
+  S.additive = true;
+  S.alpha = 1;
+  S.tint = null;
+}
+
+const easeOut = (t) => 1 - Math.pow(1 - clamp01(t), 2.6);
 
 function drawBeams3(dl, cam, fx, S, time) {
   for (const b of fx.beams) {
@@ -274,7 +358,7 @@ function drawNumbers3(dl, cam, fx) {
  */
 export function drawSpeedLines(ctx, W, H, strength, color, seed, focusX = W / 2, focusY = H / 2) {
   if (strength <= 0.01) return;
-  const n = Math.round(46 * clamp01(strength) + 14);
+  const n = Math.round(22 * clamp01(strength) + 10);
   const R = Math.hypot(W, H) * 0.62;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
@@ -282,10 +366,10 @@ export function drawSpeedLines(ctx, W, H, strength, color, seed, focusX = W / 2,
   ctx.lineCap = 'butt';
   for (let i = 0; i < n; i++) {
     const a = seed + (i / n) * TAU + Math.sin(i * 12.9898) * 0.05;
-    const inner = R * (0.18 + (Math.sin(i * 78.233) * 0.5 + 0.5) * 0.3 * (1 - strength * 0.5));
+    const inner = R * (0.3 + (Math.sin(i * 78.233) * 0.5 + 0.5) * 0.26 * (1 - strength * 0.4));
     const outer = R * (1.0 + (Math.sin(i * 39.77) * 0.5 + 0.5) * 0.2);
-    const w = 1 + (Math.sin(i * 12.3) * 0.5 + 0.5) * 7 * strength;
-    ctx.globalAlpha = (0.1 + (Math.sin(i * 4.1) * 0.5 + 0.5) * 0.3) * strength;
+    const w = 1.5 + (Math.sin(i * 12.3) * 0.5 + 0.5) * 9 * strength;
+    ctx.globalAlpha = (0.06 + (Math.sin(i * 4.1) * 0.5 + 0.5) * 0.19) * strength;
     ctx.lineWidth = w;
     ctx.beginPath();
     ctx.moveTo(focusX + Math.cos(a) * inner, focusY + Math.sin(a) * inner);

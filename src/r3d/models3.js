@@ -222,15 +222,19 @@ function headMesh(a, opts = {}) {
         break;
       case 'spiky':
       default:
-        cap(0.075, hair);
-        for (let i = 0; i < 9; i++) {
-          const ang = (i / 9) * TAU;
-          const r = 0.075;
-          b.merge(cone(0.028, 0.085 + (i % 3) * 0.03, 4, i % 2 ? hairLit : hair),
+        cap(0.085, hair);
+        for (let i = 0; i < 13; i++) {
+          const ang = (i / 13) * TAU;
+          const r = 0.082;
+          b.merge(cone(0.036, 0.13 + (i % 4) * 0.045, 4, i % 2 ? hairLit : hair),
             matCompose(Math.cos(ang) * r - 0.005, Math.sin(ang) * r, 0.225,
-              0, 0.55 + (i % 2) * 0.25, ang));
+              0, 0.5 + (i % 3) * 0.28, ang));
         }
-        b.merge(cone(0.032, 0.1, 4, hairLit), matCompose(0.06, 0, 0.225, 0, 0.9, 0));
+        // The fringe: three heavier locks falling forward over the brow.
+        for (let i = -1; i <= 1; i++) {
+          b.merge(cone(0.042, 0.16, 4, i === 0 ? hairLit : hair),
+            matCompose(0.055, i * 0.055, 0.215, 0, 1.15 + Math.abs(i) * 0.12, i * 0.35));
+        }
         break;
     }
     return b.build();
@@ -294,15 +298,22 @@ function torsoMesh(a, f) {
     const b = new MeshBuilder();
     const lit = shade(uniform, 1.25);
     const dark = shade(uniform, 0.7);
-    // Ribcage: wider at the shoulders, tapering to the waist. Unit height.
-    b.merge(taperedBox(0.24, 0.34, 0.3, 0.42, 0.62, uniform, {
+    // Waist, cinched. A straight tube reads as a mannequin; the taper in and
+    // then out again is most of what makes a silhouette look like a person.
+    b.merge(taperedBox(0.27, 0.37, 0.235, 0.325, 0.28, dark), matCompose(0, 0, 0, 0, 0, 0));
+    // Ribcage, flaring to the shoulders.
+    b.merge(taperedBox(0.235, 0.325, 0.33, 0.47, 0.56, uniform, {
       sideColor: uniform, rightColor: lit, leftColor: dark,
-    }), matCompose(0, 0, 0.3, 0, 0, 0));
-    b.merge(taperedBox(0.26, 0.36, 0.24, 0.34, 0.3, dark), matCompose(0, 0, 0, 0, 0, 0));
-    // Collar.
-    b.merge(taperedBox(0.2, 0.3, 0.14, 0.2, 0.09, lit), matCompose(0, 0, 0.9, 0, 0, 0));
+    }), matCompose(0, 0, 0.28, 0, 0, 0));
+    // Shoulder yoke: the flat top the arms hang from.
+    b.merge(taperedBox(0.33, 0.47, 0.29, 0.42, 0.08, lit), matCompose(0, 0, 0.84, 0, 0, 0));
+    // Collar, standing.
+    b.merge(taperedBox(0.2, 0.3, 0.155, 0.225, 0.11, lit), matCompose(0, 0, 0.9, 0, 0, 0));
+    // Belt.
+    b.merge(taperedBox(0.29, 0.39, 0.28, 0.38, 0.055, shade(uniform, 0.45)),
+      matCompose(0, 0, 0.19, 0, 0, 0));
     // Front placket — the jujutsu uniform's line of buttons.
-    b.merge(box(0.02, 0.05, 0.62, accent, { z0: 0 }), matCompose(0.15, 0, 0.3, 0, -0.06, 0));
+    b.merge(box(0.02, 0.05, 0.6, accent, { z0: 0 }), matCompose(0.16, 0, 0.3, 0, -0.06, 0));
     if (a.scarf) {
       b.merge(cylinder(0.14, 0.13, 0.1, 8, accent), matCompose(0, 0, 0.86, 0, 0, 0));
       b.merge(taperedBox(0.06, 0.13, 0.04, 0.08, 0.36, accent),

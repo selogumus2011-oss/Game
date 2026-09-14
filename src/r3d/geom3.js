@@ -396,11 +396,18 @@ export function drawMesh(dl, cam, mesh, mat, opts) {
 }
 
 /**
- * Inverted-hull outline: draw the mesh scaled slightly out with the front faces
- * culled, in near-black. Classic cel-shading trick, and cheap here because it
- * reuses the same buffers.
+ * Inverted-hull outline: draw the mesh's back faces in near-black behind it,
+ * expanded outward so they poke out around the silhouette. Classic cel-shading
+ * trick, and cheap here because it reuses the same buffers.
+ *
+ * The expansion is done in *screen* space rather than by scaling the model.
+ * A scaled hull draws a line whose width falls off with distance, so a fighter
+ * across the arena loses their ink entirely while one in your face is wearing a
+ * thick black border. Pushing each back-face triangle `px` pixels out from its
+ * own centroid instead gives a line of constant weight at every depth, which is
+ * how cel animation actually looks: the line does not thin out with the drawing.
  */
-export function drawOutline(dl, cam, mesh, mat, scale = 1.045, color = [10, 10, 14]) {
+export function drawOutline(dl, cam, mesh, mat, scale = 1.0, color = [10, 10, 14], px = 2.2) {
   const nv = mesh.nv;
   ensureScratch(nv);
   const view = cam.view;
@@ -442,9 +449,55 @@ export function drawOutline(dl, cam, mesh, mat, scale = 1.045, color = [10, 10, 
     if (ccx !== ccx) continue;
     const area = (bx - ax) * (ccy - ay) - (ccx - ax) * (by - ay);
     if (area <= 0) continue;                      // keep only back faces
-    poly[0] = ax; poly[1] = ay;
-    poly[2] = bx; poly[3] = by;
-    poly[4] = ccx; poly[5] = ccy;
+
+    // Offset every edge outward by px and take the corners where the offset
+    // edges meet. Pushing the corners radially from the centroid instead would
+    // leave the middle of a long edge barely moved, so the ink would thin out
+    // exactly where a silhouette is longest and most visible.
+    offsetTri(ax, ay, bx, by, ccx, ccy, px, poly);
     dl.poly((sz[i0] + sz[i1] + sz[i2]) * 0.333333 + 0.02, poly, 3, style, false, 1);
   }
+}
+
+/** Outward normal of edge P->Q for a triangle whose screen area is positive. */
+function edgeNormal(px0, py0, px1, py1, out, k) {
+  const dx = px1 - px0, dy = py1 - py0;
+  const l = Math.hypot(dx, dy) || 1;
+  out[k] = dy / l;
+  out[k + 1] = -dx / l;
+}
+
+const _n = new Float32Array(6);
+
+/** Grow a screen triangle by `px` on every side, writing 3 points into `out`. */
+function offsetTri(ax, ay, bx, by, cx, cy, px, out) {
+  edgeNormal(ax, ay, bx, by, _n, 0);
+  edgeNormal(bx, by, cx, cy, _n, 2);
+  edgeNormal(cx, cy, ax, ay, _n, 4);
+  corner(ax, ay, bx, by, 4, 0, px, out, 0);   // A: edges CA and AB
+  corner(bx, by, cx, cy, 0, 2, px, out, 2);   // B: edges AB and BC
+  corner(cx, cy, ax, ay, 2, 4, px, out, 4);   // C: edges BC and CA
+}
+
+/**
+ * Where the two offset edges meeting at (vx, vy) cross. The bisector form is
+ * used directly: moving along it by px / sin(half-angle) lands on the crossing,
+ * and the miter is capped so a needle-thin triangle cannot fire a spike off
+ * across the screen.
+ */
+function corner(vx, vy, nx, ny, e0, e1, px, out, k) {
+  let bxn = _n[e0] + _n[e1];
+  let byn = _n[e0 + 1] + _n[e1 + 1];
+  const l = Math.hypot(bxn, byn);
+  if (l < 1e-4) {                                // edges doubled back: no miter
+    out[k] = vx + _n[e0] * px;
+    out[k + 1] = vy + _n[e0 + 1] * px;
+    return;
+  }
+  bxn /= l; byn /= l;
+  // cos of the half angle between the two edge normals.
+  const cosHalf = Math.max(0.45, (bxn * _n[e0] + byn * _n[e0 + 1]));
+  const d = Math.min(px / cosHalf, px * 1.9);
+  out[k] = vx + bxn * d;
+  out[k + 1] = vy + byn * d;
 }

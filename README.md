@@ -19,8 +19,10 @@ which is a hand-written software rasteriser rather than a library.
 npm start          # http://localhost:8080
 npm test           # 29 headless simulation tests
 node tools/browsertest.mjs   # scripted playthrough + screenshots (needs Playwright)
+node tools/touchtest.mjs     # drives the game on an iPad viewport by touch alone
 node tools/domainshots.mjs   # opens all 13 domains and screenshots each
 node tools/charshots.mjs     # portrait of every sorcerer and curse model
+node tools/techshots.mjs shrine   # every ability of a technique, three frames each
 ```
 
 ES modules need a real HTTP origin, so open the served URL rather than the file.
@@ -28,6 +30,21 @@ ES modules need a real HTTP origin, so open the served URL rather than the file.
 ---
 
 ## Controls
+
+Keyboard and mouse, a gamepad, and touch all work at once — on an iPad with a
+keyboard attached you can use either, in the same match, without a mode switch.
+
+On a touch device the game draws its own controls: a movement stick that appears
+wherever your left thumb lands, and a right half that aims where you touch and
+attacks while you hold. Everything else is three arcs of buttons sweeping up
+from the bottom-right corner, inside a thumb's reach of where a hand actually
+holds a tablet — the four cursed techniques, then block / dash / jump / grab,
+then Domain Expansion, Simple Domain, Amplification and Reverse Cursed
+Technique. Buttons grey out when the action is not available. The page is pinned
+against rubber-band scrolling and double-tap zoom, lays out inside the safe area,
+and the renderer drops its backing-store resolution on large screens, because
+every polygon here is filled on the CPU and an iPad's 2× store over a full-width
+window is five and a half million pixels a frame.
 
 | Input | Action |
 | --- | --- |
@@ -99,7 +116,7 @@ and Dragon-Bone win fights they lose on paper.
 ### Flow — 領域感覚
 
 Builds from perfect parries, Black Flashes, long combos and near-miss dodges;
-decays if you disengage. At 50% you can expand a domain. It also widens the
+decays if you disengage. At 22% you can expand a domain. It also widens the
 Black Flash band, so playing well makes playing well easier.
 
 ### Domain Expansion — 領域展開
@@ -108,9 +125,11 @@ A barrier built from your innate technique. Inside it the technique becomes a
 **sure hit**: it does not travel, is not aimed, cannot be dodged. It simply
 happens, continuously, to everyone you designate.
 
-Requires 50% Flow and near-full energy. The chant takes over a second, and heavy
-guard damage during it **interrupts** the expansion — costing energy and locking
-domains for 20 seconds.
+Requires 22% Flow and near-full energy. The bar is deliberately low: the
+interesting decision is *when* you open a domain and what the other player does
+about it, not whether you ever get to. The chant is short enough to actually
+land in a fight, and heavy guard damage during it still **interrupts** the
+expansion — costing energy and locking domains for 10 seconds.
 
 The counterplay ladder, cheapest first:
 
@@ -131,7 +150,7 @@ Malevolent Shrine trades the barrier away by binding vow: no walls, a 17 m
 radius, and the slash storm cuts allies — and the caster — too.
 
 Holding a domain drains you and stops regeneration. Closing one locks the next
-for 30 s; having one shattered costs 45 s plus a chunk of health.
+for 14 s; having one shattered costs 22 s plus a chunk of health.
 
 ### Reverse Cursed Technique — 反転術式
 
@@ -214,6 +233,41 @@ lighting.
 ---
 
 ## Presentation
+
+### Looking like the show
+
+The shading is two-tone with a hard terminator, not a ramp: four flat bands with
+the break between them placed where a painter would put it, and the shadow band
+cooled and desaturated rather than simply dimmed — painted shadow reads as
+shadow, dimness reads as a mistake. On top of that the ink line is measured in
+*pixels*, not in model scale. A scaled inverted hull draws a line that thins out
+with distance, so a fighter across the arena loses their outline while one in
+your face wears a thick black border; each back-face triangle is offset outward
+in screen space instead, edge by edge, so the line holds its weight at every
+depth the way a drawn line does.
+
+Then a bloom pass and a grade. There is no shader to threshold with, so the
+frame is downsampled and squared twice — which crushes the darks to nothing and
+leaves cursed energy almost intact — blurred, and added back. The grade cools
+the whole picture and lifts the warm end, and inside a domain it shifts to that
+domain's key colour, so standing in one *looks* like standing in one.
+
+### Cuts
+
+Cleave, Dismantle and the World-Cutting Slash are not beams. A slash in this
+show is a line that was already there, and the drawing gives you three stages:
+
+1. **Flash** — a hairline the full length of the cut, white-hot, two frames.
+2. **Hold** — nothing moves. This beat is what makes the cut land.
+3. **Open** — the gap spreads, its edges light up, and darkness shows between
+   them: the space the cut took out of the world.
+
+Dismantle arrives as a lattice — strokes across the strike, stepped along it,
+leaning alternately, crossed by a second set leaning the other way. Cleave is
+one heavy measured stroke. They land on whatever the line actually connected
+with rather than at the midpoint of its reach, and a Domain Expansion opens the
+same way: a ring of cuts around the caster, the space opened before the barrier
+appears inside it.
 
 ### The 3D renderer
 

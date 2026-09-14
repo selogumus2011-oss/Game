@@ -130,8 +130,8 @@ export class Camera3 {
     this.yaw = this.baseYaw;
     this.pitch = 0.64;          // radians above the horizon
     this.basePitch = 0.64;
-    this.dist = 11.5;
-    this.baseDist = 11.5;
+    this.dist = 10.2;
+    this.baseDist = 10.2;
     this.zoom = 1;
     this.targetZoom = 1;
     this.lookAt = v3(0, 0, 1.1);
@@ -306,24 +306,44 @@ export class Camera3 {
 // ---------------------------------------------------------------------------
 
 /**
- * Three-band cel shading: key light, ambient fill, and a rim term that keys off
- * how edge-on the face is. Quantised so the result reads as cel bands rather
- * than a smooth gradient, and cached so we are not building colour strings for
- * thousands of faces every frame.
+ * Cel shading, animation-style: a hard terminator and four bands, not a ramp.
+ *
+ * Cel animation paints a surface in two or three flat tones with a sharp line
+ * between them, and the shadow is not merely the base colour turned down — it
+ * is cooled and slightly desaturated, which is what makes painted shadow read
+ * as shadow rather than as dimness. The bands below do exactly that, and the
+ * result is cached because a frame asks for this thousands of times.
  */
 const colorCache = new Map();
-const LEVELS = 14;
+
+// [multiplier, red tint, green tint, blue tint] per band, darkest first.
+const BANDS = [
+  [0.60, 0.88, 0.93, 1.16],   // core shadow: cool, and still readable
+  [0.80, 0.94, 0.97, 1.09],   // shadow
+  [1.00, 1.00, 1.00, 1.00],   // base — the authored colour, flat
+  [1.22, 1.05, 1.02, 0.96],   // lit: warm
+  [1.52, 1.10, 1.06, 0.97],   // rim / specular
+];
+
+/** Which band a lighting value falls into. The first cut is the terminator. */
+function bandOf(light) {
+  if (light < 0.46) return 0;
+  if (light < 0.72) return 1;
+  if (light < 0.98) return 2;
+  if (light < 1.22) return 3;
+  return 4;
+}
 
 export function shadeColor(rgb, light, tintR = 1, tintG = 1, tintB = 1) {
-  const q = Math.round(clamp01(light) * LEVELS);
+  const q = bandOf(light);
   const key = ((rgb[0] << 16) | (rgb[1] << 8) | rgb[2]) * 4096 +
     q * 64 + (Math.round(tintR * 3) << 4) + (Math.round(tintG * 3) << 2) + Math.round(tintB * 3);
   let s = colorCache.get(key);
   if (s === undefined) {
-    const l = q / LEVELS;
-    const r = Math.min(255, Math.round(rgb[0] * l * tintR));
-    const g = Math.min(255, Math.round(rgb[1] * l * tintG));
-    const b = Math.min(255, Math.round(rgb[2] * l * tintB));
+    const [l, br, bg, bb] = BANDS[q];
+    const r = Math.min(255, Math.round(rgb[0] * l * br * tintR));
+    const g = Math.min(255, Math.round(rgb[1] * l * bg * tintG));
+    const b = Math.min(255, Math.round(rgb[2] * l * bb * tintB));
     s = `rgb(${r},${g},${b})`;
     colorCache.set(key, s);
     if (colorCache.size > 24000) colorCache.clear();

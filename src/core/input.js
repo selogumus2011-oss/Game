@@ -69,7 +69,9 @@ export class Input {
     this.gamepadIndex = null;
     this.stick = vec(0, 0);
     this.aimStick = vec(0, 0);
+    this.touchStick = vec(0, 0);
     this.usingGamepad = false;
+    this.usingTouch = false;
     this.enabled = true;
     this._listeners = [];
     if (canvas) this._attach();
@@ -119,6 +121,10 @@ export class Input {
     this.held.add(code);
     this.justPressed.add(code);
     this.holdStart.set(code, this.time);
+    if (code.startsWith('Touch:')) {
+      this.buffer.push({ action: code.slice(6), t: this.time, consumed: false });
+      return;
+    }
     for (const [action, codes] of Object.entries(this.binds)) {
       if (codes.includes(code)) this.buffer.push({ action, t: this.time, consumed: false });
     }
@@ -130,11 +136,29 @@ export class Input {
     this.justReleased.add(code);
   }
 
+  /**
+   * Press an action directly, with no key behind it. The on-screen controls
+   * feed through here so a finger, a key, a mouse button and a gamepad all
+   * arrive at the same buffer and the same edge detection.
+   */
+  pressVirtual(action) {
+    if (!this.enabled) return;
+    this.usingTouch = true;
+    this.usingGamepad = false;
+    this._press('Touch:' + action);
+  }
+
+  releaseVirtual(action) {
+    this._release('Touch:' + action);
+  }
+
   clear() {
     this.held.clear();
     this.justPressed.clear();
     this.justReleased.clear();
     this.buffer.length = 0;
+    this.touchStick.x = 0;
+    this.touchStick.y = 0;
   }
 
   /** Call once per frame *before* the simulation reads input. */
@@ -189,7 +213,7 @@ export class Input {
   }
 
   _codesFor(action) {
-    const codes = this.binds[action] || [];
+    const codes = (this.binds[action] || []).concat('Touch:' + action);
     if (!this._padMap) return codes;
     const pads = [];
     for (const [i, a] of Object.entries(this._padMap)) if (a === action) pads.push('Pad' + i);
@@ -252,6 +276,10 @@ export class Input {
     if (Math.abs(this.stick.x) > 0 || Math.abs(this.stick.y) > 0) {
       x = this.stick.x;
       y = this.stick.y;
+    }
+    if (Math.abs(this.touchStick.x) > 0 || Math.abs(this.touchStick.y) > 0) {
+      x = this.touchStick.x;
+      y = this.touchStick.y;
     }
     const len = Math.hypot(x, y);
     if (len > 1) { x /= len; y /= len; }

@@ -19,6 +19,17 @@ import {
 export const GRAVITY = 24;
 export const SIMPLE_DOMAIN_RADIUS = 2.21; // 二尺二寸一分 — the canonical radius
 
+/**
+ * How much Flow a domain costs to open. A domain is the centrepiece of the
+ * game, so the bar to reach one is deliberately low — the interesting decision
+ * is *when* you open it and what the other player does about it, not whether
+ * you ever get to.
+ */
+export const DOMAIN_FLOW = 0.22;
+
+/** Cooldown cap on the first ability slot of every technique. */
+export const FIRST_ABILITY_COOLDOWN = 0.1;
+
 let nextId = 1;
 
 const emptyIntent = () => ({
@@ -564,10 +575,12 @@ export class Fighter {
   }
 
   integrate(dt, world) {
-    // Horizontal friction depends on what you are doing.
-    let friction = 7;
+    // Horizontal friction depends on what you are doing. Grounded friction is
+    // high on purpose: a fighting game wants you to stop when you let go, not
+    // to coast, and every frame of slide is a frame you did not control.
+    let friction = 15;
     if (this.state === 'dash') friction = 4.0;
-    else if (this.state === 'attack') friction = 9;
+    else if (this.state === 'attack') friction = 11;
     else if (this.state === 'stagger' || this.state === 'knockdown') friction = 3.2;
     if (this.z > 0.1) friction = 1.1;
 
@@ -616,7 +629,10 @@ export class Fighter {
     if (typeof it.aim === 'number' && isFinite(it.aim)) {
       this.aim = it.aim;
       if (this.canAct() || this.state === 'block' || this.state === 'idle' || this.state === 'move') {
-        const turnRate = this.state === 'block' ? 8 : 16;
+        // Turning is near-instant when idle so the character always faces what
+        // you are pointing at; it slows while guarding, where committing to a
+        // direction is the whole point of the stance.
+        const turnRate = this.state === 'block' ? 11 : 34;
         this.facing = angleDamp(this.facing, this.aim, turnRate, dt);
       }
     }
@@ -649,11 +665,16 @@ export class Fighter {
         if (this.state === 'block') sp *= 0.42;
         if (this.simpleDomain.active) sp *= 0.45;
         if (this.z > 0.2) sp *= 0.72;
-        const accel = this.z > 0.2 ? 16 : 42;
+        // Reaching top speed should take a couple of frames, not a fifth of a
+        // second. The friction above still has to be beaten, so the target is
+        // overshot by the amount friction will immediately eat.
+        const accel = this.z > 0.2 ? 5 : 26;
         const tx = (mv.x / Math.max(mag, 1)) * sp;
         const ty = (mv.y / Math.max(mag, 1)) * sp;
-        this.vel.x = damp(this.vel.x, tx, accel / 8, dt);
-        this.vel.y = damp(this.vel.y, ty, accel / 8, dt);
+        const friction = this.z > 0.1 ? 1.1 : (this.state === 'attack' ? 11 : 15);
+        const k = 1 + friction / accel;
+        this.vel.x = damp(this.vel.x, tx * k, accel, dt);
+        this.vel.y = damp(this.vel.y, ty * k, accel, dt);
         if (this.state === 'idle') this.state = 'move';
       } else if (this.state === 'move') {
         this.state = 'idle';
@@ -882,7 +903,12 @@ export class Fighter {
     if (!this.spendCe(cost)) return false;
     if (ab.hpCost) this.takeTrueDamage(ab.hpCost, ab.name, false);
     if (ab.throat) this.throat = Math.min(120, this.throat + ab.throat);
-    this.cooldowns['ab' + index] = ab.cooldown || 0;
+    // The first slot of every technique is the bread-and-butter opener. It is
+    // meant to be spammable — cursed energy is the real limiter on it, not a
+    // timer — so it comes back almost immediately whatever the data says.
+    this.cooldowns['ab' + index] = index === 0
+      ? Math.min(FIRST_ABILITY_COOLDOWN, ab.cooldown || 0)
+      : (ab.cooldown || 0);
 
     this.state = 'cast';
     this.stateTime = 0;
@@ -932,7 +958,7 @@ export class Fighter {
     if (this.domain) return false;
     const cost = d.cost * (1 + (this.vowMods.domainCost ?? 0));
     if (!this.canAfford(cost)) return false;
-    if (this.flow < 0.5) return false;
+    if (this.flow < DOMAIN_FLOW) return false;
     return true;
   }
 
@@ -943,7 +969,9 @@ export class Fighter {
     if (this.actionFlags.noTechnique) return 'Technique sealed';
     if (this.domainBurnout > 0) return `Domain burnout ${this.domainBurnout.toFixed(0)}s`;
     if (this.domain) return 'Domain already open';
-    if (this.flow < 0.5) return `Flow ${Math.round(this.flow * 100)}% / 50%`;
+    if (this.flow < DOMAIN_FLOW) {
+      return `Flow ${Math.round(this.flow * 100)}% / ${Math.round(DOMAIN_FLOW * 100)}%`;
+    }
     if (!this.canAfford(d.cost)) return 'Not enough cursed energy';
     return 'Ready';
   }
@@ -957,7 +985,10 @@ export class Fighter {
       return false;
     }
     const d = this.domainSpec();
-    const castTime = Math.max(0.25, d.castTime * (1 + this.vowMods.domainCast) / (this.stats.domainSkill || 1));
+    // The chant is short enough to actually land in a fight. It is still long
+    // enough that a heavy hit through it is a real punish.
+    const castTime = Math.max(0.2,
+      d.castTime * 0.62 * (1 + this.vowMods.domainCast) / (this.stats.domainSkill || 1));
     this.state = 'domainCast';
     this.stateTime = 0;
     this.domainCast = { t: 0, dur: castTime, spec: d };
@@ -979,7 +1010,7 @@ export class Fighter {
       this.state = 'stagger';
       this.staggerTime = 1.0;
       this.ce *= 0.4;
-      this.domainBurnout = 20;
+      this.domainBurnout = 10;
       world.notify('DOMAIN INTERRUPTED', '#ff4d4d');
       world.audio('domainBreak', { volume: 0.9 });
       world.event({ type: 'domainInterrupt', fighter: this.id });

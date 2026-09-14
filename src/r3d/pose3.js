@@ -164,7 +164,7 @@ export function pose3(f, time) {
     P,
   };
 
-  const shoulderY = 0.19 * S * build;
+  const shoulderY = 0.215 * S * build;
   sk.sL = V(0, shoulderY, hipZ + 0.48 * S);
   sk.sR = V(0, -shoulderY, hipZ + 0.48 * S);
 

@@ -20,6 +20,9 @@ import {
   MeshBuilder, taperedBox,
 } from './geom3.js';
 
+/** How much larger than life the head is drawn. */
+const HEAD_SCALE = 1.34;
+
 const rootMat = new Float32Array(16);
 const tmpMat = new Float32Array(16);
 const tmpMat2 = new Float32Array(16);
@@ -149,9 +152,10 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
 
   const outline = q.outlines;
   const ink = [8, 8, 12];
-  const emit = (mesh, mat, ol = outline, olScale = 1.06) => {
+  // `olScale` is now an ink width in pixels, not a hull scale.
+  const emit = (mesh, mat, ol = outline, olScale = 2.4) => {
     drawMesh(dl, cam, mesh, mat, S);
-    if (ol) drawOutline(dl, cam, mesh, mat, olScale, ink);
+    if (ol) drawOutline(dl, cam, mesh, mat, 1, ink, olScale);
   };
 
   // --- legs -----------------------------------------------------------------
@@ -165,7 +169,7 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
     // Foot: a flat box pointing forward.
     matCompose(foot.x + 0.045 * Sc, foot.y, foot.z, 0, 0, 0,
       0.22 * Sc, 0.1 * Sc, 0.06 * Sc, tmpMat2);
-    emit(footUnit('#14161c'), matMul(rootMat, tmpMat2, tmpMat), outline, 1.08);
+    emit(footUnit('#14161c'), matMul(rootMat, tmpMat2, tmpMat), outline, 2.0);
   }
 
   // --- pelvis and torso -----------------------------------------------------
@@ -177,7 +181,7 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
     const co = sk.P.rig.coat;
     matCompose(sk.hip.x + co.x * 0.5, sk.hip.y + co.y * 0.5, sk.hip.z + 0.02 * Sc,
       co.y * 0.5, -co.x * 0.7, tw * 0.6, Sc * build, Sc * build, Sc, tmpMat2);
-    emit(coatMesh(a, f), matMul(rootMat, tmpMat2, tmpMat), outline, 1.05);
+    emit(coatMesh(a, f), matMul(rootMat, tmpMat2, tmpMat), outline, 2.4);
   }
 
   // --- arms -----------------------------------------------------------------
@@ -193,18 +197,24 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
     const dx = h.x - e.x, dy = h.y - e.y, dz = h.z - e.z;
     const L = Math.hypot(dx, dy, dz) || 1;
     const tip = { x: h.x + dx / L * 0.1 * Sc, y: h.y + dy / L * 0.1 * Sc, z: h.z + dz / L * 0.1 * Sc };
-    emit(handUnit(glove), boneTransform(rootMat, h, tip, 0.085 * Sc * build, tmpMat), outline, 1.1);
+    emit(handUnit(glove), boneTransform(rootMat, h, tip, 0.085 * Sc * build, tmpMat), outline, 2.0);
   }
 
   // --- head -----------------------------------------------------------------
+  // Anime proportion, not anatomical: the head carries the character's whole
+  // identity, so it is drawn a third larger than a real one relative to the
+  // body and tucked down slightly so the chin still meets the shoulders.
   const hr = sk.P.rig.hair;
-  const headMat = partTransform(rootMat, head,
-    hr.y * 0.8, sk.headPitch - hr.x * 0.8, tw * 1.1 + sk.headYaw, Sc, tmpMat);
-  emit(q.lod === 0 ? headMesh(a) : headMeshLow(a), headMat, outline, 1.05);
+  const hs = Sc * HEAD_SCALE;
+  const headAnchor = { x: head.x, y: head.y, z: head.z - 0.055 * Sc };
+  const headMat = partTransform(rootMat, headAnchor,
+    hr.y * 0.8, sk.headPitch - hr.x * 0.8, tw * 1.1 + sk.headYaw, hs, tmpMat);
+  emit(q.lod === 0 ? headMesh(a) : headMeshLow(a), headMat, outline, 2.6);
   const mane = maneMesh(a);
   if (mane && q.detail > 0) {
-    matCompose(head.x - 0.01 * Sc + hr.x * 0.4, head.y + hr.y * 0.4, head.z + 0.16 * Sc,
-      hr.y * 1.6, -hr.x * 1.6 + 0.12, tw * 1.1, Sc, Sc, Sc, tmpMat2);
+    matCompose(head.x - 0.01 * hs + hr.x * 0.4, head.y + hr.y * 0.4,
+      headAnchor.z + 0.2 * hs,
+      hr.y * 1.6, -hr.x * 1.6 + 0.12, tw * 1.1, hs, hs, hs, tmpMat2);
     emit(mane, matMul(rootMat, tmpMat2, tmpMat), false);
   }
 
@@ -218,7 +228,7 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
     // Blades stand proud of the fist rather than continuing straight out of it.
     const bend = f.tool.shape === 'blade' || f.tool.shape === 'cleaver' ? 0.9 : 0.25;
     const up = { x: tipV.x - dz / L * bend, y: tipV.y, z: tipV.z + dx / L * bend + bend * 0.5 };
-    emit(tm, boneTransform(rootMat, hR, up, Sc, tmpMat, 0), q.outlines, 1.03);
+    emit(tm, boneTransform(rootMat, hR, up, Sc, tmpMat, 0), q.outlines, 2.0);
   }
 }
 
@@ -306,7 +316,7 @@ function drawCurseBody(dl, cam, f, sk, S, q, time) {
       w * k, w * k, s * k * breathe, tmpMat2);
     matMul(rootMat, tmpMat2, tmpMat);
     drawMesh(dl, cam, p.mesh, tmpMat, S);
-    if (outline) drawOutline(dl, cam, p.mesh, tmpMat, 1.05, ink);
+    if (outline) drawOutline(dl, cam, p.mesh, tmpMat, 1, ink, 2.4);
   }
 }
 

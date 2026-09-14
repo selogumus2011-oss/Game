@@ -8,14 +8,14 @@ import { FLATTEN, HEIGHT } from './camera.js';
 import { drawFighter, drawShadow, drawAura, hexA, shade } from './characters.js';
 import { drawDomainFloor, drawDomainDome, drawDomainOverlay, setDomainQuality } from './domainVisuals.js';
 import { SIMPLE_DOMAIN_RADIUS } from '../sim/fighter.js';
-import { glowSprite, softSprite, blit } from './sprites.js';
+import { glowSprite, softSprite, blit, pickDpr } from './sprites.js';
 import { flashWindowPhase } from '../sim/combat.js';
 
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false });
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = 1;
     this.weather = [];
     this.time = 0;
     this.grainCanvas = null;
@@ -36,7 +36,7 @@ export class Renderer {
     const c = this.canvas;
     const w = c.clientWidth || window.innerWidth;
     const h = c.clientHeight || window.innerHeight;
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = pickDpr(w, h);
     c.width = Math.floor(w * this.dpr);
     c.height = Math.floor(h * this.dpr);
     this.width = w;
@@ -1098,6 +1098,44 @@ export class Renderer {
   drawAirFx(ctx, fx, cam, t) {
     const ctx2 = ctx;
     ctx2.save();
+    ctx2.globalCompositeOperation = 'lighter';
+
+    // Cuts: flash, hold, then open. See Effects.cut for the staging.
+    for (const c of fx.cuts) {
+      if (c.delay > 0) continue;
+      const k = clamp01(c.life / c.max);
+      const age = 1 - k;
+      const p = cam.project(c.x, c.y, c.z);
+      const s = cam.scale;
+      const half = c.len * 0.5 * s;
+      const dx = Math.cos(c.angle) * half;
+      const dy = Math.sin(c.angle) * half * FLATTEN;
+      ctx2.save();
+      ctx2.translate(p.x, p.y);
+      ctx2.rotate(Math.atan2(dy, dx));
+      const L = Math.hypot(dx, dy);
+      if (age < 0.16) {
+        const f = 1 - age / 0.16;
+        ctx2.fillStyle = hexA('#ffffff', f);
+        ctx2.fillRect(-L, -1 - f, L * 2, 2 + f * 2);
+      } else {
+        const open = 1 - Math.pow(1 - clamp01((age - 0.16) / 0.5), 2.6);
+        const fade = clamp01(k / 0.55);
+        const gap = open * c.width * s * 0.5;
+        ctx2.globalCompositeOperation = 'source-over';
+        ctx2.fillStyle = hexA('#05010a', fade * 0.85);
+        ctx2.fillRect(-L, -gap, L * 2, gap * 2);
+        ctx2.globalCompositeOperation = 'lighter';
+        ctx2.fillStyle = hexA(c.color, fade);
+        ctx2.fillRect(-L, -gap - 1.5, L * 2, 3);
+        ctx2.fillRect(-L, gap - 1.5, L * 2, 3);
+        if (open < 0.7) {
+          ctx2.fillStyle = hexA('#ffffff', fade * (1 - open / 0.7));
+          ctx2.fillRect(-L, -1.5, L * 2, 3);
+        }
+      }
+      ctx2.restore();
+    }
     ctx2.globalCompositeOperation = 'lighter';
 
     // Beams — each technique's line is drawn the way that technique cuts.

@@ -328,7 +328,7 @@ export class Domain {
     if (this.owner && !this.owner.dead) {
       this.owner.takeTrueDamage(this.owner.maxHp * 0.08, 'domain backlash');
       this.owner.ce = 0;
-      this.owner.domainBurnout = 45;
+      this.owner.domainBurnout = 22;
       this.owner.flow = 0;
       addStatus(this.owner, { type: 'stun', time: 0.8 });
     }
@@ -341,7 +341,7 @@ export class Domain {
     const world = this.world;
     if (this.owner) {
       this.owner.domain = null;
-      if (reason !== 'shattered') this.owner.domainBurnout = Math.max(this.owner.domainBurnout, 30);
+      if (reason !== 'shattered') this.owner.domainBurnout = Math.max(this.owner.domainBurnout, 14);
     }
     for (const f of world.fighters) if (f.insideDomain === this) f.insideDomain = null;
     world.event({ type: 'domainClose', domain: this.spec.id, reason, owner: this.ownerId });

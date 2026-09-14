@@ -3,6 +3,7 @@
 
 import { Loop, FIXED_DT } from './core/loop.js';
 import { Input } from './core/input.js';
+import { TouchControls } from './core/touch.js';
 import { audio } from './core/audio.js';
 import { clamp, clamp01, vangle, vsub, TAU, rand, randRange } from './core/math.js';
 import { World } from './sim/world.js';
@@ -23,6 +24,7 @@ class Game {
     this.canvas = document.getElementById('game');
     this.uiRoot = document.getElementById('ui');
     this.input = new Input(this.canvas);
+    this.touch = new TouchControls(this.input, this.canvas);
     // Both presentation stacks run off the same simulation; the settings screen
     // swaps between them live and the HUD works against either camera.
     this.renderer2d = new Renderer(this.canvas);
@@ -237,6 +239,9 @@ class Game {
 
   update(dt) {
     this.input.update(dt);
+    this.touch.resize(this.renderer.width, this.renderer.height);
+    this.touch.update(dt);
+    this.hud.touchMode = this.touch.active;
 
     if (this.state === 'playing' && this.world) {
       const w = this.world;
@@ -496,6 +501,7 @@ class Game {
     this.effects.quality = (this.settings?.particles ?? 1) * r.quality;
     r.render(this.world, this.camera, this.effects, dt);
     this.hud.draw(ctx, this.world, this.camera, r.width, r.height, dt);
+    this.touch.draw(ctx, this.world.player);
     if (this.state === 'paused') {
       ctx.save();
       ctx.fillStyle = 'rgba(4,5,8,0.55)';

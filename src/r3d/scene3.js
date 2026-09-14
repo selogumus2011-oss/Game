@@ -17,12 +17,13 @@ import { drawEffects3, drawImpactFrames, drawSpeedLines } from './fx3.js';
 import { drawDomain3, setDomainQuality3 } from './domains3.js';
 import { drawProjectiles3, drawSummonLinks3, drawTelegraphs3 } from './props3.js';
 import { shade } from './models3.js';
+import { pickDpr } from '../render/sprites.js';
 
 export class Renderer3D {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false });
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = 1;
     this.dl = new DrawList();
     this.time = 0;
     this.weather = [];
@@ -34,7 +35,7 @@ export class Renderer3D {
     this.veilIntroMax = 2.1;
     this.settings = {
       particles: 1, grain: true, vignette: true, chromatic: true,
-      weather: true, shadows: true, showNames: true,
+      weather: true, shadows: true, showNames: true, bloom: true, grade: true,
     };
     this.quality = 1;
     this._fpsAvg = 60;
@@ -49,7 +50,7 @@ export class Renderer3D {
     const c = this.canvas;
     const w = c.clientWidth || window.innerWidth;
     const h = c.clientHeight || window.innerHeight;
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = pickDpr(w, h);
     c.width = Math.floor(w * this.dpr);
     c.height = Math.floor(h * this.dpr);
     this.width = w;
@@ -79,7 +80,8 @@ export class Renderer3D {
     const grd = g2.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.34,
       W / 2, H / 2, Math.max(W, H) * 0.74);
     grd.addColorStop(0, 'rgba(0,0,0,0)');
-    grd.addColorStop(1, 'rgba(0,0,0,0.6)');
+    grd.addColorStop(0.55, 'rgba(4,6,12,0.18)');
+    grd.addColorStop(1, 'rgba(3,4,9,0.78)');
     g2.fillStyle = grd;
     g2.fillRect(0, 0, W, H);
     this.vignetteCanvas = c;
@@ -128,9 +130,11 @@ export class Renderer3D {
 
     const S = this.shadeOpts;
     S.light = this.light;
-    S.ambient = 0.44;
-    S.key = 0.66;
-    S.rim = 0.4;
+    // Most surfaces should land on the lit side of the terminator; the shadow
+    // band is an accent, not the default state of the world.
+    S.ambient = 0.62;
+    S.key = 0.46;
+    S.rim = 0.34;
 
     drawSky(ctx, cam, world.arena, W, H);
 
@@ -173,6 +177,8 @@ export class Renderer3D {
     if (world.player && world.player.state === 'dash') {
       drawSpeedLines(ctx, W, H, 0.45, '#ffffff', this.time * 3);
     }
+    this._bloom(ctx, W, H);
+    this._grade(ctx, W, H, world);
     this._veilIntro(ctx, W, H, dt, world);
     if (this.settings.vignette && this.vignetteCanvas) {
       ctx.drawImage(this.vignetteCanvas, 0, 0, W, H);
@@ -250,6 +256,68 @@ export class Renderer3D {
         ctx.fillRect(x, y, 2 * p.s, 2 * p.s);
       }
     }
+    ctx.restore();
+  }
+
+  /**
+   * Bloom, the cheap way.
+   *
+   * There is no shader to threshold with, so the frame is downsampled and then
+   * multiplied by itself: squaring the values crushes the darks toward nothing
+   * while leaving bright cursed energy almost intact, which is the threshold. A
+   * blurred upscale added back on top is the glow. Two draws of a quarter-size
+   * canvas, and it is what makes energy read as light rather than paint.
+   */
+  _bloom(ctx, W, H) {
+    if (!this.settings.bloom || this.quality < 0.8) return;
+    const bw = Math.max(2, Math.round(W * 0.2));
+    const bh = Math.max(2, Math.round(H * 0.2));
+    let b = this.bloomCanvas;
+    if (!b || b.width !== bw || b.height !== bh) {
+      b = this.bloomCanvas = document.createElement('canvas');
+      b.width = bw; b.height = bh;
+      this.bloomCtx = b.getContext('2d');
+    }
+    const bc = this.bloomCtx;
+    bc.globalCompositeOperation = 'source-over';
+    bc.globalAlpha = 1;
+    bc.clearRect(0, 0, bw, bh);
+    bc.drawImage(this.canvas, 0, 0, bw, bh);
+    // Squaring once crushes darks; squaring twice leaves only what is genuinely
+    // glowing, which is the point — bloom on the whole picture is just haze.
+    bc.globalCompositeOperation = 'multiply';
+    bc.drawImage(b, 0, 0);
+    bc.drawImage(b, 0, 0);
+    bc.globalCompositeOperation = 'source-over';
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.85;
+    ctx.filter = 'blur(6px)';
+    ctx.drawImage(b, 0, 0, W, H);
+    ctx.filter = 'none';
+    ctx.restore();
+  }
+
+  /**
+   * Colour grade. Anime keys its shadows cool and its highlights warm and holds
+   * the midtones tight, so the picture reads as painted rather than lit. A
+   * multiply pass cools and deepens everything, a screen pass lifts the warm
+   * end back, and inside a domain the whole grade shifts to that domain's key.
+   */
+  _grade(ctx, W, H, world) {
+    if (!this.settings.grade) return;
+    const dom = world.player?.insideDomain;
+    const tint = dom && !dom.closed ? dom.spec.color2 || '#0a0a14' : '#121a2a';
+    const c = hexToRgb(tint);
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = `rgb(${204 + c[0] * 0.12 | 0},${210 + c[1] * 0.11 | 0},${226 + c[2] * 0.08 | 0})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.07;
+    ctx.fillStyle = dom && !dom.closed ? dom.spec.color : '#2a1a10';
+    ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
 

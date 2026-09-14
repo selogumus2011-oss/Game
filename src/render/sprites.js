@@ -65,3 +65,17 @@ export function clearSpriteCache() {
   glowCache.clear();
   softCache.clear();
 }
+
+/**
+ * Backing-store resolution. Every polygon in this game is filled by hand on the
+ * CPU, so cost scales with pixels: an iPad's 2x store over a 1180pt-wide window
+ * is five and a half million pixels a frame. Full density stays for small
+ * windows, where it is affordable and where text needs it most.
+ */
+export function pickDpr(w, h) {
+  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+  const px = w * h * dpr * dpr;
+  if (px < 2.2e6) return Math.min(dpr, 2);
+  if (px < 4.5e6) return Math.min(dpr, 1.5);
+  return Math.min(dpr, 1.25);
+}

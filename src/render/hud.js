@@ -4,6 +4,7 @@
 import { clamp, clamp01, lerp, TAU, PI, vdist } from '../core/math.js';
 import { hexA } from './characters.js';
 import { flashWindowPhase, FLASH } from '../sim/combat.js';
+import { DOMAIN_FLOW } from '../sim/fighter.js';
 import { FLATTEN, HEIGHT } from './camera.js';
 import { STATUS_META } from '../sim/status.js';
 
@@ -48,7 +49,9 @@ export class Hud {
     this.drawFlashRing(ctx, world, cam, p);
     this.drawVitals(ctx, world, p, W, H);
     this.drawAbilities(ctx, world, p, W, H);
-    this.drawDefensives(ctx, world, p, W, H);
+    // On touch the on-screen buttons already say all of this, and they live
+    // in exactly the same corner.
+    if (!this.touchMode) this.drawDefensives(ctx, world, p, W, H);
     this.drawCombo(ctx, world, p, W, H, dt);
     this.drawTopBar(ctx, world, W, H);
     this.drawBossBars(ctx, world, W, H);
@@ -195,12 +198,12 @@ export class Hud {
     }
 
     // Flow / domain readiness.
-    const flowCol = p.flow >= 0.5 ? '#ff8a3a' : '#8a6a4a';
+    const flowCol = p.flow >= DOMAIN_FLOW ? '#ff8a3a' : '#8a6a4a';
     bar(ctx, x, y + 36, w, 8, p.flow, flowCol, 1, '#ffd08a');
     ctx.font = `700 9px ${FONT}`;
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.fillText(`FLOW ${Math.round(p.flow * 100)}%`, x + 5, y + 43);
-    if (p.flow >= 0.5 && p.domainSpec()) {
+    if (p.flow >= DOMAIN_FLOW && p.domainSpec()) {
       ctx.textAlign = 'right';
       ctx.fillStyle = '#ffd166';
       ctx.fillText('DOMAIN READY [X]', x + w - 5, y + 43);
@@ -716,7 +719,18 @@ export class Hud {
     ctx.textAlign = 'left';
     ctx.font = `600 11px ${FONT}`;
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    const lines = [
+    const lines = this.touchMode ? [
+      'LEFT half   drag to move',
+      'RIGHT half  touch to aim, hold to attack',
+      '術式  1-4   cursed techniques',
+      '防 block   歩 dash   跳 jump   掴 grab',
+      '簡 Simple Domain   増 Amplification',
+      '反 Reverse Cursed Technique',
+      '領 Domain Expansion',
+      '',
+      'BLACK FLASH — land your next hit',
+      'while the red band on the ring is lit.',
+    ] : [
       'WASD  move          Mouse  aim',
       'LMB   light  ·  hold for heavy',
       'RMB   block  ·  TAP = PARRY',

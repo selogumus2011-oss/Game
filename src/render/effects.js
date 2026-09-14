@@ -24,6 +24,7 @@ export class Effects {
     this.sprites = [];    // one-off symbols: kanji bursts, seals
     this.flashes = [];    // fullscreen colour flashes
     this.impacts = [];    // manga impact frames (radial speed lines)
+    this.cuts = [];       // slashes that flash, hold, then open
     this.quality = 1;     // 0.4 .. 1.4, scales particle counts
   }
 
@@ -38,6 +39,7 @@ export class Effects {
     this.sprites.length = 0;
     this.flashes.length = 0;
     this.impacts.length = 0;
+    this.cuts.length = 0;
   }
 
   /**
@@ -170,6 +172,75 @@ export class Effects {
     this.flashes.push({ color, strength, life: time, max: time, mode });
   }
 
+  /**
+   * A cut through the world.
+   *
+   * A slash in this show is not a glowing sword arc — it is a line that was
+   * already there. The drawing gives you a hairline flash, a held beat where
+   * nothing happens, and then the cut opens: the gap spreads, the edges light
+   * up, and whatever was on the line comes apart. Those three stages are the
+   * whole effect, and the pause in the middle is what sells it.
+   */
+  cut(o) {
+    this.cuts.push(Object.assign({
+      x: 0, y: 0, z: 1.1, angle: 0, len: 8, width: 0.5,
+      tilt: 0,                 // roll of the cut plane about the stroke axis
+      lean: 0,                 // swing of the stroke itself about the strike
+      delay: 0,                // stagger, so a set of cuts lands in sequence
+      life: 0.5, max: 0.5, color: '#ff4d4d', style: 'dismantle',
+    }, o));
+    if (this.cuts.length > 40) this.cuts.shift();
+  }
+
+  /**
+   * Dismantle arrives as a lattice, not a single stroke: a fan of parallel cuts
+   * crossed by a second fan at right angles. Cleave is one heavy stroke.
+   */
+  cutFan(x, y, z, angle, o = {}) {
+    const n = o.count ?? 3;
+    const len = o.len ?? 8;
+    const cross = o.cross ?? false;
+    const slash = (o.slash ?? 3.2);     // how wide a single stroke reads
+
+    // The strokes run ACROSS the strike, stepped along its length. Cuts laid
+    // along the beam are almost invisible when the beam points away from the
+    // camera — they foreshorten to a sliver — whereas a stroke across it reads
+    // at any angle, which is also how the show draws them.
+    for (let i = 0; i < n; i++) {
+      const t = n === 1 ? 0 : (i / (n - 1) - 0.5) * 2;
+      this.cut(Object.assign({}, o, {
+        x: x + Math.cos(angle) * t * len * 0.3,
+        y: y + Math.sin(angle) * t * len * 0.3,
+        z: z + t * (o.rise ?? 0.2),
+        angle: angle + PI / 2,
+        len: slash,
+        // Diagonal, alternating: parallel horizontal bars look like a fence,
+        // opposed diagonals look like something was cut. The swing is about the
+        // strike's own axis, which is what tips the stroke on screen — rolling
+        // the plane instead would only turn it edge-on to the camera.
+        lean: (0.7 + t * (o.fan ?? 0.18)) * (i % 2 ? 1 : -1),
+        tilt: (o.tilt ?? 0) + t * 0.12,
+        delay: i * (o.stagger ?? 0.03),
+      }));
+    }
+    if (!cross) return;
+    // The crossing half of the lattice: the same strokes leaning the other way.
+    const m = Math.max(2, n);
+    for (let i = 0; i < m; i++) {
+      const t = m === 1 ? 0 : (i / (m - 1) - 0.5) * 2;
+      this.cut(Object.assign({}, o, {
+        x: x + Math.cos(angle) * t * len * 0.24,
+        y: y + Math.sin(angle) * t * len * 0.24,
+        z: z + t * 0.14,
+        angle: angle + PI / 2,
+        len: slash * 0.92,
+        lean: -(0.7 - t * 0.18) * (i % 2 ? 1 : -1),
+        tilt: (o.tilt ?? 0) - t * 0.12,
+        delay: 0.06 + i * (o.stagger ?? 0.03),
+      }));
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Event translation
   // -------------------------------------------------------------------------
@@ -288,7 +359,20 @@ export class Effects {
       }
       case 'domainOpen': {
         const R = e.radius;
-        this.impact(0.95, e.color || '#ffffff', true, 0.65);
+        this.impact(0.95, e.color || '#ffffff', true, 0.65,
+          { x: p.x, y: p.y, z: 1.6 }, true);
+        // The space is cut open before the barrier appears in it: a ring of
+        // slashes facing outward, each one opening onto the dark.
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * TAU + 0.2;
+          this.cut({
+            x: p.x + Math.cos(a) * R * 0.55, y: p.y + Math.sin(a) * R * 0.55,
+            z: 1.5 + (i % 3) * 0.9,
+            angle: a + PI / 2, lean: (i % 2 ? 1 : -1) * 0.75, tilt: 0,
+            len: R * 0.62, width: 1.4, color: e.color || '#ffffff',
+            style: 'domain', delay: i * 0.028, life: 0.8, max: 0.8,
+          });
+        }
         this.flash(e.color || '#ffffff', 0.5, 0.6);
         this.flash('#ffffff', 0.35, 0.16);
         // Ground shock racing out ahead of the barrier.
@@ -524,9 +608,39 @@ export class Effects {
         this.ring({ x: p.x, y: p.y, z: 1.2, r: 3.4, target: 0.4, life: 0.6, color: '#9a4cff', width: 0.2, flat: false });
         this.ring({ x: p.x, y: p.y, z: 1.2, r: 3.0, target: 0.4, life: 0.6, color: '#ff6bd6', width: 0.14, flat: false });
         break;
-      case 'beam':
-        this.beam({ from: e.from, to: e.to, z: 1.1, width: e.width || 1, life: e.life || 0.28, color: e.color || '#ffffff', style: e.vfx || 'beam' });
+      case 'beam': {
+        const vfx = e.vfx || 'beam';
+        const mid = e.focus
+          ? { x: e.focus.x, y: e.focus.y }
+          : { x: (e.from.x + e.to.x) / 2, y: (e.from.y + e.to.y) / 2 };
+        const ang = Math.atan2(e.to.y - e.from.y, e.to.x - e.from.x);
+        const len = vdist(e.from, e.to);
+        if (vfx === 'dismantle' || vfx === 'cleave' || vfx === 'worldcut') {
+          // These are cuts, not beams. Dismantle comes as a lattice; Cleave is
+          // one measured stroke; the World-Cutting Slash is a cut that keeps
+          // going after the arm has stopped.
+          const heavy = vfx !== 'dismantle';
+          this.cutFan(mid.x, mid.y, e.focus ? e.focus.z : 1.2, ang, {
+            len,
+            slash: vfx === 'worldcut' ? 11 : vfx === 'cleave' ? 6 : 4.2,
+            width: (e.width || 1) * (heavy ? 0.85 : 0.45),
+            color: e.color || '#ff4d4d',
+            style: vfx,
+            count: vfx === 'dismantle' ? 3 : vfx === 'cleave' ? 1 : 2,
+            cross: vfx === 'dismantle',
+            rise: 0.18, fan: 0.2,
+            life: heavy ? 0.7 : 0.55,
+            max: heavy ? 0.7 : 0.55,
+            stagger: 0.035,
+          });
+          this.impact(heavy ? 0.85 : 0.45, e.color || '#ff4d4d', heavy, heavy ? 0.34 : 0.2,
+            { x: mid.x, y: mid.y, z: 1.2 }, vfx === 'worldcut');
+          if (heavy) this.flash('#ffffff', 0.3, 0.1);
+          break;
+        }
+        this.beam({ from: e.from, to: e.to, z: 1.1, width: e.width || 1, life: e.life || 0.28, color: e.color || '#ffffff', style: vfx });
         break;
+      }
       case 'word':
       case 'word_dontmove':
       case 'word_blast':
@@ -618,6 +732,15 @@ export class Effects {
       }
       p.rot += p.spin * dt;
       if (p.grow) p.size += p.grow * dt;
+    }
+
+    // Cuts hold before they age: the delay is the beat between the flash and
+    // the world coming apart, and nothing about the cut moves during it.
+    for (let i = this.cuts.length - 1; i >= 0; i--) {
+      const c = this.cuts[i];
+      if (c.delay > 0) { c.delay -= dt; continue; }
+      c.life -= dt;
+      if (c.life <= 0) this.cuts.splice(i, 1);
     }
 
     for (const list of [this.arcs, this.rings, this.beams, this.bolts, this.numbers, this.sprites, this.flashes, this.impacts]) {
