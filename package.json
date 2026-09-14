@@ -1,0 +1,11 @@
+{
+  "name": "nexus-island-royale-cursed",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Jujutsu-style cursed energy combat game — domains, reverse cursed technique, black flash.",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "test": "node tools/smoketest.mjs"
+  }
+}
