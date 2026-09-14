@@ -7,14 +7,20 @@ It is a **combat game, not a shooter**. Everything is decided at melee range by
 frame data, guard damage and timing windows. Techniques are tools that open or
 close that range — they are never the whole fight.
 
-No engine, no asset pipeline, no build step. Pure ES modules, a 2D canvas, and
-procedural WebAudio. Every character, curse, prop and sound is generated from
-code.
+It renders in 3D, cel-shaded with ink outlines, on a renderer written from
+scratch for it.
+
+No engine, no asset pipeline, no build step, and no third-party runtime code.
+Pure ES modules, a canvas, and procedural WebAudio. Every character, curse,
+prop, domain and sound is generated from code — including the 3D renderer,
+which is a hand-written software rasteriser rather than a library.
 
 ```bash
 npm start          # http://localhost:8080
 npm test           # 29 headless simulation tests
 node tools/browsertest.mjs   # scripted playthrough + screenshots (needs Playwright)
+node tools/domainshots.mjs   # opens all 13 domains and screenshots each
+node tools/charshots.mjs     # portrait of every sorcerer and curse model
 ```
 
 ES modules need a real HTTP origin, so open the served URL rather than the file.
@@ -209,6 +215,56 @@ lighting.
 
 ## Presentation
 
+### The 3D renderer
+
+The game renders in real 3D: a perspective camera, low-poly models posed from an
+actual skeleton, hemispherical domain barriers you stand inside, and ink
+outlines over hard cel bands.
+
+It is all hand-written, in `src/r3d/`:
+
+- **`core3.js`** — vectors, 4×4 matrices, the orbit-follow camera, quantised
+  three-band cel shading with a colour cache, and a draw list that collects
+  every polygon, sprite, line and label in the frame and sorts it once by view
+  depth.
+- **`geom3.js`** — the primitive builders (tapered boxes, cylinders, cones,
+  spheres, prisms, rings, domes) and the rasteriser. Faces are culled by screen
+  winding, then the view-space normal is recovered from the projected triangle
+  so the lighting is real rather than faked per object. `drawOutline` re-draws a
+  mesh scaled out with the front faces culled — the inverted-hull trick, which
+  is what gives everything its ink line.
+- **`pose3.js`** — the 3D skeleton: hips, chest, neck, head, shoulders, elbows,
+  hands, knees and feet, driven by the same frame data the simulation uses, with
+  spring chains for hair and coat tails.
+- **`models3.js` / `actors3.js`** — procedural bodies. Heads are built per
+  palette (skull, jaw, ears, eye plates, brows, nine hair styles, blindfold,
+  markings, stitches); limbs are unit bones stretched onto the skeleton; every
+  cursed tool has its own mesh. The curse roster has a builder per silhouette —
+  blob, mouth, mantis, wraith, hulk, serpent, finger bearer, hanged, special
+  grade, dog, toad, nue, Mahoraga, Rika, isomer, fish, puppet.
+- **`arena3.js`** — floors baked as chunked tile blocks with the grout part of
+  the geometry, so nothing is ever coplanar and a painter's sort can never
+  flicker; props modelled per type; the veil as a real curtain of falling
+  panels.
+- **`fx3.js` / `props3.js`** — every effect as geometry: slash crescents that
+  taper to points, beams as cylinders with muzzle flares, shockwaves as rings,
+  cursed-energy orbs as cored spheres, lightning as projected polylines.
+- **`domains3.js`** — the barriers and their interiors (see below).
+
+Why write a renderer instead of using one: the whole project ships with no build
+step and no dependencies, and flat-shaded polygons with inverted-hull outlines
+are exactly the look this game wants. There is nothing a general-purpose engine
+would add here except a bundler.
+
+Performance is adaptive. Fighters and props drop through levels of detail with
+distance — a curse forty metres out loses its outline, its hands, its staring
+eyes and its detailed head — and the quality tier steps the whole scene down if
+the frame rate falls. The classic 2.5D renderer is still there and selectable
+under Settings → 3D renderer; it runs the same simulation, the same frame data
+and the same HUD.
+
+### Direction
+
 The look leans on the source material's own grammar rather than generic game
 feedback:
 
@@ -220,8 +276,13 @@ feedback:
   and ultimates get a bigger stamp and a camera punch.
 - **Cast telegraphs**: a shrinking ring and a progress arc over any fighter
   charging a technique, so there is a readable window to interrupt them.
-- **Impact frames**: radial manga speed lines and a colour wash on Black Flash,
-  guard breaks, perfect parries and domain openings.
+- **Impact frames**: radial manga speed lines and a colour wash. They converge
+  on the actual point of impact in the world rather than the middle of the
+  screen, and they fire for cursed techniques too — scaled by how much of the
+  target's health the hit really took, so chip damage gets nothing and a clean
+  technique landing gets the full panel. Past a threshold the frame adds ragged
+  white gashes across the whole view. Black Flash, guard breaks, perfect
+  parries, ultimates coming out and domain openings all have their own.
 - **Black Flash** inverts the screen, throws black lightning, scorches the
   ground and stamps 黒閃 over the impact.
 
@@ -256,30 +317,51 @@ than faded in:
 6. **Collapse** — a shatter throws panels off the whole hemisphere and then
    implodes; a clean expiry drains the interior back into the caster.
 
-Each of the thirteen domains gets its own floor, dome and screen treatment:
+In 3D the barrier is real geometry you are standing inside, not a shape drawn
+over the arena. The floor replaces the arena's — tiles, scuffs and blood scars
+inside the radius are skipped rather than layered under it — and the shell's
+brightness ramps out toward the ground so its rim never cuts a hard line across
+the frame. Anything the domain builds as a landmark is set back from the middle,
+because the caster spawns at the centre of their own domain and a structure that
+size would otherwise swallow them.
 
-- **Unlimited Void** — a starfield floor under counter-rotating information
-  rings, an eye that opens on the dome, and glyph columns cascading down the
-  screen.
-- **Malevolent Shrine** — an open barrier: no walls, a skull-ringed ground, the
-  shrine itself standing over the arena with skulls swinging from the beam, and
-  a storm of *paired* cuts, because Dismantle arrives as a cross.
-- **Chimera Shadow Garden** — liquid shadow pooling and rolling, eyes opening
-  and blinking shut in the dark, shadow running down the inside of the walls.
-- **Self-Embodiment of Perfection** — souls drifting under the floor and hands
-  pressing out through the barrier.
-- **Coffin of the Iron Mountain** — breathing lava fissures, rock plates with
-  glowing seams, ash falling across the screen.
-- **Frozen Sanctuary** — a frost lattice creeping outward, shards growing out of
-  the ground, icicles hanging from the dome, frost closing in from the edges.
-- **Idle Death Gamble** — a peg field with balls falling through it and a reel
-  strip on the cabinet that locks to 7-7-7 on a pay-out.
-- **Authentic Mutual Love** — petals and a heartbeat that drives the whole
-  interior's pulse.
-- **Horizon of the Captivating Skandha** — water rolling outward forever, torii
-  receding toward a horizon line that never arrives, caustics on the screen.
-- **Flowing Red Sea**, **Cradle of Quiet Words**, **Chamber of Unknown Depths**
-  and **Deadly Sentencing** each get the same treatment: surface, walls, screen.
+Each of the thirteen gets its own floor, interior and shell treatment:
+
+- **Unlimited Void** — a lattice of light columns rising out of the floor on a
+  golden-angle spiral, information rings rushing inward, and a pale orb overhead
+  ringed by three orbiting bands.
+- **Malevolent Shrine** — an open barrier: no walls at all. A bone shrine with a
+  toothed maw and curving rib arches stands under its own torii, furnace light
+  in its mouth, bone piles scattered around, and the dismantle storm raking the
+  floor in slashes.
+- **Chimera Shadow Garden** — oily swells across the surface, shikigami
+  silhouettes surfacing and sinking with lit eyes, and hands reaching up out of
+  the shadow.
+- **Self-Embodiment of Perfection** — half-finished idols standing in a ring,
+  bobbing gently, with loose souls drifting through the volume above them.
+- **Coffin of the Iron Mountain** — you are inside the volcano, not looking at
+  one: a caldera wall of leaning rock slabs around the rim, lava fountains
+  climbing out of the floor, a heat column over the centre, ash coming down.
+- **Frozen Sanctuary** — ice shards growing out of the ground as the domain
+  settles, fangs dropping from the barrier, a cold haze over the whole floor.
+- **Idle Death Gamble** — a pachinko parlour. Cabinets in a ring with neon
+  banding, three drums on a shared axle in the middle, and on a pay-out the
+  reels lock to 7-7-7 and the whole space fills with steel balls.
+- **Authentic Mutual Love** — ribbons of hair sweeping through the volume, her
+  eyes set into the shell watching you, and the maw overhead biting on every
+  sure-hit tick.
+- **Horizon of the Captivating Skandha** — a whirlpool of counter-rotating
+  rings, standing water columns sweeping the floor, spray where the water meets
+  the barrier.
+- **Deadly Sentencing** — an actual courtroom: the judge's bench with its seal
+  on the far side, gallery pews facing it, the verdict light falling from
+  overhead, and a gavel that drops on every tick of the sentence.
+- **Flowing Red Sea** — swell rings on the surface and blood columns rising and
+  falling like a fountain that never lands.
+- **Cradle of Quiet Words** — stone tablets hanging in the air, each carrying a
+  command in kanji, turning slowly.
+- **Chamber of Unknown Depths** — a hive column and five orbiting bands of
+  insects filling the air.
 
 Sure-hit is drawn explicitly — a tether runs from the dome to everyone the
 domain has designated, and turns into a dashed line with a guard ring when
@@ -296,10 +378,12 @@ src/
             arenas, melee frame data
   sim/      fighter state machine, damage pipeline, Black Flash, domains,
             projectiles, hazard zones, statuses, utility AI, world
-  render/   camera, procedural characters, effects, domain visuals, HUD,
-            cached glow sprites
+  r3d/      the 3D renderer: math and camera, mesh primitives and rasteriser,
+            3D skeleton, procedural models, arena, effects, domains, scene
+  render/   2.5D renderer, effects pool, HUD, cached glow sprites
   ui/       DOM menus and the codex
-tools/      static server, headless test suite, browser playthrough
+tools/      static server, headless test suite, browser playthrough,
+            domain gallery, cast gallery
 ```
 
 The simulation is **DOM-free and deterministic**. It never touches the canvas;
@@ -310,9 +394,10 @@ behaves, that Simple Domain cuts sure-hit damage, that a shattered domain
 backfires, that the Abstinence vow really does forbid healing, and that the same
 seed replays the same fight exactly.
 
-Rendering steps itself down automatically on slow hardware: glow sprites are
-baked per colour, the vignette and grain are cached, and particle density plus
-weather drop out below 46 fps.
+Rendering steps itself down automatically on slow hardware. Glow sprites are
+baked per colour, the vignette and grain are cached, particle density and
+weather drop out below 46 fps, and in 3D the outlines, the floor resolution, the
+barrier's second skin and every model's level of detail all come off with it.
 
 ---
 

@@ -1463,10 +1463,10 @@ export class Renderer {
   }
 
   /** Radial manga speed lines — used for dashes and impact frames. */
-  drawSpeedLines(ctx, W, H, strength, color, seed) {
+  drawSpeedLines(ctx, W, H, strength, color, seed, fx = W / 2, fy = H / 2) {
     if (strength <= 0.01) return;
-    const cx = W / 2, cy = H / 2;
-    const R = Math.hypot(W, H) * 0.55;
+    const cx = fx, cy = fy;
+    const R = Math.hypot(W, H) * 0.62;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = hexA(color, 0.5 * strength);
@@ -1478,6 +1478,30 @@ export class Renderer {
       ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
       ctx.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
       ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Ragged white gashes across the frame — reserved for the biggest hits. */
+  drawImpactGashes(ctx, W, H, k, strength, color, seed) {
+    const n = Math.round(3 + strength * 3);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < n; i++) {
+      const a = seed * 2.3 + i * 1.97;
+      const cx = W * (0.5 + Math.cos(a * 3.1) * 0.32);
+      const cy = H * (0.5 + Math.sin(a * 2.3) * 0.3);
+      const len = Math.hypot(W, H) * (0.3 + (i % 3) * 0.16) * (0.4 + k * 0.6);
+      const w = (5 + (i % 4) * 7) * strength * k;
+      ctx.globalAlpha = 0.5 * k * strength;
+      ctx.fillStyle = i % 3 === 0 ? color : '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(cx - Math.cos(a) * len, cy - Math.sin(a) * len);
+      ctx.lineTo(cx - Math.sin(a) * w, cy + Math.cos(a) * w);
+      ctx.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len);
+      ctx.lineTo(cx + Math.sin(a) * w * 0.4, cy - Math.cos(a) * w * 0.4);
+      ctx.closePath();
+      ctx.fill();
     }
     ctx.restore();
   }
@@ -1545,7 +1569,13 @@ export class Renderer {
     // Impact frames: the panel-border moment on a big connection.
     for (const im of fx.impacts) {
       const k = clamp01(im.life / im.max);
-      this.drawSpeedLines(ctx, W, H, k * im.strength, im.color, im.seed);
+      let fxp = W / 2, fyp = H / 2;
+      if (im.focus) {
+        const p = cam.project(im.focus.x, im.focus.y, im.focus.z ?? 1.3);
+        fxp = p.x; fyp = p.y;
+      }
+      this.drawSpeedLines(ctx, W, H, k * im.strength, im.color, im.seed, fxp, fyp);
+      if (im.gash) this.drawImpactGashes(ctx, W, H, k, im.strength, im.color, im.seed);
       if (im.flash) {
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';

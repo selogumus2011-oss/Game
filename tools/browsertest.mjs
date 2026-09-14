@@ -18,7 +18,11 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 810 } });
 
-const IGNORE = [/fonts\.g(oogle)?apis/i, /fonts\.gstatic/i, /ERR_CONNECTION_RESET/i, /ERR_NAME_NOT_RESOLVED/i];
+// Google Fonts is unreachable in the sandbox; the page has local fallbacks.
+const IGNORE = [
+  /fonts\.g(oogle)?apis/i, /fonts\.gstatic/i, /ERR_CONNECTION_RESET/i,
+  /ERR_NAME_NOT_RESOLVED/i, /ERR_CERT_AUTHORITY_INVALID/i,
+];
 page.on('console', (m) => {
   if (m.type() !== 'error') return;
   const text = m.text();

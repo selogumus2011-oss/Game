@@ -8,6 +8,8 @@ import { clamp, clamp01, vangle, vsub, TAU, rand, randRange } from './core/math.
 import { World } from './sim/world.js';
 import { Camera } from './render/camera.js';
 import { Renderer } from './render/renderer.js';
+import { Camera3 } from './r3d/core3.js';
+import { Renderer3D } from './r3d/scene3.js';
 import { Effects } from './render/effects.js';
 import { Hud } from './render/hud.js';
 import { UI } from './ui/menus.js';
@@ -21,8 +23,15 @@ class Game {
     this.canvas = document.getElementById('game');
     this.uiRoot = document.getElementById('ui');
     this.input = new Input(this.canvas);
-    this.renderer = new Renderer(this.canvas);
-    this.camera = new Camera(this.canvas);
+    // Both presentation stacks run off the same simulation; the settings screen
+    // swaps between them live and the HUD works against either camera.
+    this.renderer2d = new Renderer(this.canvas);
+    this.camera2d = new Camera(this.canvas);
+    this.renderer3d = new Renderer3D(this.canvas);
+    this.camera3d = new Camera3();
+    this.mode3d = true;
+    this.renderer = this.renderer3d;
+    this.camera = this.camera3d;
     this.effects = new Effects();
     this.hud = new Hud();
     this.world = null;
@@ -47,9 +56,11 @@ class Game {
 
     window.addEventListener('resize', () => {
       this.renderer.resize();
-      this.camera.resize(this.renderer.width, this.renderer.height);
+      this.camera2d.resize(this.renderer.width, this.renderer.height);
+      this.camera3d.resize(this.renderer.width, this.renderer.height);
     });
-    this.camera.resize(this.renderer.width, this.renderer.height);
+    this.camera2d.resize(this.renderer.width, this.renderer.height);
+    this.camera3d.resize(this.renderer.width, this.renderer.height);
 
     // Audio needs a user gesture.
     const unlock = () => {
@@ -75,8 +86,24 @@ class Game {
     audio.sfxVolume = s.sfxVolume;
     if (audio.sfxGain) audio.sfxGain.gain.value = s.sfxVolume;
     this.effects.quality = s.particles;
-    this.renderer.settings.grain = s.grain;
-    this.renderer.settings.showNames = s.showNames;
+    this.setRenderMode(s.render3d !== false);
+    for (const r of [this.renderer2d, this.renderer3d]) {
+      r.settings.grain = s.grain;
+      r.settings.showNames = s.showNames;
+    }
+  }
+
+  /** Swap presentation stacks, carrying the framing across so it does not jump. */
+  setRenderMode(on3d) {
+    if (on3d === this.mode3d && this.renderer) return;
+    this.mode3d = on3d;
+    const prev = this.camera;
+    this.renderer = on3d ? this.renderer3d : this.renderer2d;
+    this.camera = on3d ? this.camera3d : this.camera2d;
+    this.renderer.resize();
+    this.camera.resize(this.renderer.width, this.renderer.height);
+    if (prev && prev !== this.camera) this.camera.snapTo(prev.x ?? 0, prev.y ?? 0);
+    if (this.world) this.renderer.initWeather(this.world.arena);
   }
 
   onKey(e) {
@@ -362,6 +389,20 @@ class Game {
           size, weight, crit: !!ev.blackFlash || !!ev.crit,
         });
         if (ev.blackFlash && isPlayerAttacker) this.camera.punchZoom(0.22);
+
+        // Cursed techniques get an impact frame when they connect. Black Flash
+        // already has its own, and chip damage does not earn one — the weight
+        // comes from how much of the victim's health the hit actually took.
+        if (!ev.blackFlash && ev.kind !== 'dot' && ev.kind !== 'block' &&
+            ev.tags && ev.tags.includes('technique')) {
+          const victim = w.byId(ev.victim);
+          const attacker = w.byId(ev.attacker);
+          const frac = victim ? ev.damage / Math.max(1, victim.maxHp) : 0;
+          const weight = frac * 5.2 + (ev.crit ? 0.2 : 0) +
+            (isPlayerVictim || isPlayerAttacker ? 0.12 : -0.1);
+          this.effects.techniqueImpact(ev.pos, ev.z,
+            ev.color || attacker?.technique?.color || '#ffffff', weight);
+        }
       } else if (ev.type === 'abilityStart') {
         // Name the technique as it comes out, the way the show does.
         if (ev.jp) {
@@ -372,7 +413,13 @@ class Game {
             style: ev.ultimate ? 'flash' : 'kanji',
           });
         }
-        if (ev.ultimate && w.player && ev.fighter === w.player.id) this.camera.punchZoom(0.12);
+        if (ev.ultimate) {
+          // An ultimate coming out is worth a frame on its own, focused on the
+          // caster, before whatever it does on contact.
+          this.effects.impact(0.7, ev.color || '#ffffff', false, 0.3,
+            { x: ev.pos.x, y: ev.pos.y, z: ev.z ?? 1.4 });
+          if (w.player && ev.fighter === w.player.id) this.camera.punchZoom(0.12);
+        }
       } else if (ev.type === 'domainCast') {
         // Announce the expansion the moment the chant starts.
         const caster = w.byId(ev.fighter);

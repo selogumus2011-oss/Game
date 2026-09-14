@@ -40,13 +40,30 @@ export class Effects {
     this.impacts.length = 0;
   }
 
-  /** A manga impact frame: radial speed lines plus a colour wash. */
-  impact(strength, color, flash = true, time = 0.3) {
+  /**
+   * A manga impact frame: radial speed lines plus a colour wash. `focus` is an
+   * optional world point the lines converge on — passing the hit position makes
+   * the frame read as "this is where it landed" instead of a generic flash.
+   * `gash` adds the ragged white slashes reserved for the biggest hits.
+   */
+  impact(strength, color, flash = true, time = 0.3, focus = null, gash = false) {
     this.impacts.push({
-      life: time, max: time, strength, color, flash,
+      life: time, max: time, strength, color, flash, gash,
+      focus: focus ? { x: focus.x, y: focus.y, z: focus.z ?? 1.3 } : null,
       seed: rand() * TAU,
     });
     if (this.impacts.length > 4) this.impacts.shift();
+  }
+
+  /**
+   * The frame a cursed technique earns when it connects. Scaled by how much the
+   * hit actually mattered so ordinary chip damage does not get the treatment.
+   */
+  techniqueImpact(pos, z, color, weight) {
+    const s = clamp01(weight);
+    if (s < 0.18) return;
+    this.impact(0.3 + s * 0.65, color || '#ffffff', s > 0.45,
+      0.22 + s * 0.22, { x: pos.x, y: pos.y, z: z ?? 1.3 }, s > 0.7);
   }
 
   // -------------------------------------------------------------------------
