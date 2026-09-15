@@ -6,6 +6,7 @@
 
 import { clamp, clamp01, lerp, TAU, PI, noise1 } from '../core/math.js';
 import { actionTotal } from '../data/actions.js';
+import { signFor, SIGNS } from './hands3.js';
 
 const ACTION_MODE = {
   light1: 'jab', light2: 'cross', light3: 'spin', light4: 'kick',
@@ -122,6 +123,7 @@ export function pose3(f, time) {
   const P = {
     mode: null, windup: 0, strike: 0, follow: 0, spin: 0,
     guard: 0, cast: 0, rct: 0, crouch: 0, lean: 0, twist: 0,
+    sign: null, signWeight: 0,
     airborne: f.z > 0.25, knocked: 0, recoil: r.recoil, recoilYaw: r.recoilYaw,
     squash: r.squash, blink: r.blink, rig: r, S, dead: f.dead,
   };
@@ -145,6 +147,26 @@ export function pose3(f, time) {
   }
   if (f.state === 'block') P.guard = 1;
   if (f.state === 'cast' || f.state === 'domainCast') P.cast = 1;
+
+  // --- hand signs ----------------------------------------------------------
+  // A cast raises the hands into a sign, holds it, then throws it away as the
+  // technique comes out. A domain always signs, whatever its data says: the
+  // sure-hit is the one thing in this game that is never casual.
+  if (f.state === 'domainCast' && f.domainCast) {
+    const k = clamp01(f.domainCast.t / Math.max(0.05, f.domainCast.dur));
+    P.sign = SIGNS.domain;
+    // Up fast, held for the body of the chant, still up when it opens.
+    P.signWeight = clamp01(k / 0.28);
+  } else if (f.state === 'cast' && f.cast) {
+    const ab = f.cast.ability;
+    P.sign = signFor(ab);
+    const ct = Math.max(0.05, ab.castTime || 0.2);
+    const k = f.cast.t / ct;
+    // Raise over the first third, hold, then drop away once it has fired.
+    P.signWeight = f.cast.fired
+      ? clamp01(1 - (f.cast.t - ct) / 0.18)
+      : clamp01(k / 0.34);
+  }
   if (f.state === 'rct') P.rct = 1;
   if (f.state === 'stagger') { P.crouch = 0.6; P.lean = 0.45; }
   if (f.state === 'knockdown' || f.dead) P.knocked = 1;
@@ -226,6 +248,29 @@ export function pose3(f, time) {
   } else if (P.rct) {
     setArm('R', sk.sR, 0.2 * S, -armY, sz - 0.2 * S, 0.26 * S, -0.02 * S, sz - 0.42 * S);
     setArm('L', sk.sL, 0.14 * S, armY * 1.2, sz - 0.22 * S, 0.1 * S, armY * 1.1, sz - 0.46 * S);
+  } else if (P.cast && P.sign) {
+    // Hands into the sign, blended out of the reach they would otherwise take
+    // so the raise reads as a movement rather than a snap.
+    const g = P.sign;
+    const w = P.signWeight;
+    // Where the sign is held. Anchoring to the head rather than the shoulder
+    // is what the sign actually means — hands in front of the face — and it
+    // keeps them just below eye level, which matters because in first person
+    // the eye is right there and anything higher is off the top of the screen.
+    const fx = g.hold * S;
+    const fz = sk.head.z - (0.10 + (1 - g.face) * 0.28 - g.height) * S;
+    const sy = g.spread * 0.5 * S;
+    // Reach pose, which is what the hands do when the sign is not yet up.
+    const reachR = [0.3 * S, -armY * 0.8, sz + 0.04 * S, 0.62 * S, -armY * 0.5, sz + 0.14 * S];
+    const reachL = [0.2 * S, armY * 1.1, sz - 0.14 * S, 0.3 * S, armY * 1.0, sz - 0.1 * S];
+    // Elbows drop and flare out, which is what makes a sign look held rather
+    // than merely reached.
+    const signR = [fx * 0.46, -armY * 1.05, sz - 0.26 * S, fx, -sy, fz];
+    const signL = [fx * 0.46, armY * 1.05, sz - 0.26 * S, fx, sy, fz];
+    setArm('R', sk.sR, ...signR.map((v, i) => lerp(reachR[i], v, w)));
+    setArm('L', sk.sL, ...signL.map((v, i) => lerp(reachL[i], v, w)));
+    // The head tips up behind the hands on the big ones.
+    sk.headPitch -= g.face * w * 0.12;
   } else if (P.cast) {
     setArm('R', sk.sR, 0.3 * S, -armY * 0.8, sz + 0.04 * S, 0.62 * S, -armY * 0.5, sz + 0.14 * S);
     setArm('L', sk.sL, 0.2 * S, armY * 1.1, sz - 0.14 * S, 0.3 * S, armY * 1.0, sz - 0.1 * S);
@@ -271,6 +316,11 @@ export function pose3(f, time) {
         break;
     }
   }
+
+  // The sign the hands are making, if any, for the renderer to swap in the
+  // finger geometry. Below a whisker of weight it is not worth the meshes.
+  sk.sign = P.signWeight > 0.05 ? P.sign : null;
+  sk.signWeight = P.signWeight;
 
   // The lead hand carries the tool.
   sk.weaponHand = sk.hR;

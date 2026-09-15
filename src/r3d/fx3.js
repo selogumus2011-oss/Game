@@ -329,10 +329,14 @@ function drawSprites3(dl, cam, fx) {
     cam.project(s.x, s.y, s.z, proj);
     if (proj.d <= cam.near) continue;
     const k = clamp01(s.life / s.max);
-    const px = s.size * cam.f / proj.d * 0.08;
+    // Perspective scaling alone sends a world-space label to hundreds of pixels
+    // when the camera is close — and first person is always close. These are
+    // callouts, not geometry, so the size is capped at something that still
+    // fits across the screen.
+    const px = clamp(s.size * cam.f / proj.d * 0.08, 11, 54);
     const rise = (1 - k) * 26;
     dl.text(proj.d - 0.5, proj.x, proj.y - rise, s.text, s.color,
-      `800 ${Math.max(9, px * 0.62).toFixed(0)}px system-ui, sans-serif`, k, true);
+      `800 ${(px * 0.62).toFixed(0)}px system-ui, sans-serif`, k, true);
   }
 }
 

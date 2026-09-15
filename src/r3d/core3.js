@@ -158,7 +158,9 @@ export class Camera3 {
     // the eye at lookAt - dir * dist, so putting lookAt this far down the
     // sightline and dist at the same value lands the eye exactly on the head.
     this.fpvReach = 3.2;
-    this.eyeHeight = 1.56;
+    // Eye height as a fraction of the fighter's own height, matching where
+    // the skeleton puts the head.
+    this.eyeRatio = 0.89;
   }
 
   /** Turn first person on or off. The transition is animated by update(). */
@@ -327,6 +329,11 @@ export class Camera3 {
     // camera (projection, culling, the HUD's metres-per-pixel) keeps working
     // untouched.
     this.fpv = damp(this.fpv, this.fpvTarget, 9, dt);
+    // Third person never has anything within a third of a metre of the lens,
+    // so a generous near plane is free. First person has your own hands there:
+    // a sign held in front of the chest sits about 0.3m from the eye and would
+    // be clipped away entirely.
+    this.near = lerp(0.35, 0.06, clamp01(this.fpv));
     if (this.fpv > 0.001 && focus) {
       const cp = Math.cos(this.fpvPitch), sp = Math.sin(this.fpvPitch);
       const R = this.fpvReach;
@@ -335,7 +342,10 @@ export class Camera3 {
       const bob = Math.sin(this.time * 11) * clamp(vlen(focus.vel) / 9, 0, 1) * 0.055;
       const ex = focus.pos.x + Math.cos(this.fpvYaw) * 0.16;
       const ey = focus.pos.y + Math.sin(this.fpvYaw) * 0.16;
-      const ez = focus.z + this.eyeHeight * (focus.scale || 1) + bob;
+      // Derive the eye from the fighter's actual height rather than a constant:
+      // the model's head sits at about 0.89 of the body height, and characters
+      // here are not all the same size.
+      const ez = focus.z + (focus.height || 1.75) * this.eyeRatio + bob;
       const w = this.fpv;
       let d = this.fpvYaw - this.yaw;
       while (d > PI) d -= TAU;

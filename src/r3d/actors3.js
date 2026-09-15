@@ -16,6 +16,7 @@ import {
   buildCurse, shade, eyeMesh, LIMB_W, cached,
 } from './models3.js';
 import { boneTransform, partTransform } from './models3.js';
+import { handMesh } from './hands3.js';
 import {
   MeshBuilder, taperedBox,
 } from './geom3.js';
@@ -203,12 +204,41 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
   emit(limbUnit(sleeve), boneTransform(rootMat, eL, hL, foW, tmpMat));
   emit(limbUnit(sleeve), boneTransform(rootMat, eR, hR, foW, tmpMat));
 
-  // Hands, oriented along the forearm.
-  for (const [e, h] of q.lod === 2 ? [] : [[eL, hL], [eR, hR]]) {
+  // Hands, oriented along the forearm. While a sign is up they are real hands
+  // with fingers rather than the usual stub, because the shape the fingers
+  // make is the whole point of a sign.
+  const sign = sk.sign;
+  const pairs = q.lod === 2 ? [] : [[eL, hL, 'L'], [eR, hR, 'R']];
+  for (const [e, h, side] of pairs) {
     const dx = h.x - e.x, dy = h.y - e.y, dz = h.z - e.z;
     const L = Math.hypot(dx, dy, dz) || 1;
-    const tip = { x: h.x + dx / L * 0.1 * Sc, y: h.y + dy / L * 0.1 * Sc, z: h.z + dz / L * 0.1 * Sc };
-    emit(handUnit(glove), boneTransform(rootMat, h, tip, 0.085 * Sc * build, tmpMat), outline, 2.0);
+    if (sign && q.lod === 0) {
+      // Hand meshes are authored running along +z from the wrist, so they
+      // orient with the same angles boneTransform derives for a bone — but at
+      // uniform scale, since a hand does not stretch with the forearm.
+      //
+      // The direction comes from the sign rather than the forearm: a hand held
+      // in front of the chest has a forearm pointing at the viewer, which
+      // would show the sign end-on and hide the shape entirely. The sign's
+      // `dir` is in body space, and the whole body is already rotated by
+      // rootMat, so it needs no yawing here.
+      const sd = sign.dir;
+      const mirror = side === 'L' ? 1 : -1;
+      let ax = sd[0], ay = sd[1] * mirror, az = sd[2];
+      const aL = Math.hypot(ax, ay, az) || 1;
+      ax /= aL; ay /= aL; az /= aL;
+      const ry = Math.acos(clamp(az, -1, 1));
+      const rz = Math.atan2(ay, ax);
+      const hs = 0.2 * Sc * build;
+      const mesh = handMesh(side === 'L' ? sign.L : sign.R, skin, side === 'L' ? 1 : -1);
+      // No ink on a hand. The outline pass offsets each back face by a fixed
+      // number of screen pixels, which on finger-sized triangles is wider than
+      // the triangle itself and bursts them into spikes.
+      emit(mesh, partTransform(rootMat, h, sign.roll, ry, rz, hs, tmpMat), false);
+    } else {
+      const tip = { x: h.x + dx / L * 0.1 * Sc, y: h.y + dy / L * 0.1 * Sc, z: h.z + dz / L * 0.1 * Sc };
+      emit(handUnit(glove), boneTransform(rootMat, h, tip, 0.085 * Sc * build, tmpMat), outline, 2.0);
+    }
   }
 
   // --- head -----------------------------------------------------------------
@@ -409,7 +439,10 @@ function drawAuras(dl, cam, f, sk, S, q, time, fade) {
     const col = hexToRgb(ab.color || ab.projectile?.color || ab.beamColor
       || f.technique?.color || '#8ad8ff');
     const cTint = [col[0] / 140, col[1] / 140, col[2] / 140];
-    const big = ab.ultimate ? 1.9 : 1;
+    // In first person the orb gathers half a metre from the lens, where a
+    // full-size one is a wall of colour that hides the sign the hands are
+    // making. It shrinks rather than disappears: you still see what is coming.
+    const big = (ab.ultimate ? 1.9 : 1) * (q.viewModel ? 0.42 : 1);
 
     // The orb: starts loose and wide, converges to a dense point.
     const r = lerp(0.62, 0.2, prog) * big * (1 + Math.sin(time * 26) * 0.05);
