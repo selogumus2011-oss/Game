@@ -339,6 +339,10 @@ export function dealDamage(world, attacker, victim, hitIn) {
     damage, pos: { x: victim.pos.x, y: victim.pos.y }, z: victim.z + 1.0,
     angle: incomingAngle, blackFlash: result.blackFlash, crit: hit.crit,
     tags: hit.tags, sourceName: hit.sourceName,
+    // Identity, so the presentation layer can draw this technique's own
+    // signature rather than a generic puff in the technique's colour.
+    abilityId: hit.abilityId || null,
+    techniqueId: attacker?.technique?.id || null,
   });
 
   if (!result.blackFlash) {

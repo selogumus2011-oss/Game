@@ -18,6 +18,8 @@ export class Projectile {
     this.team = spec.team ?? (owner ? owner.team : 0);
     // Captured at spawn: only a shot the player fired collides generously.
     this.ownerAssist = owner?.aimAssist ?? 0;
+    // Which ability threw this, so the hit can be drawn as that ability.
+    this.abilityId = spec.abilityId || null;
 
     this.pos = vec(spec.pos?.x ?? (owner ? owner.pos.x : 0), spec.pos?.y ?? (owner ? owner.pos.y : 0));
     const angle = spec.angle ?? (owner ? owner.facing : 0);
@@ -194,6 +196,7 @@ export class Projectile {
       status: this.status ? Object.assign({}, this.status) : null,
       burn: this.burn, pos: { x: this.pos.x, y: this.pos.y },
       angle: this.angle, hitstop: 0.06, sourceName: this.sourceName,
+      abilityId: this.abilityId,
       physical: this.tags.includes('physical'),
     });
     if (this.onHit) this.onHit({ world, self: this.owner, victim: f, projectile: this, result: res });

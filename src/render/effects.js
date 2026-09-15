@@ -9,6 +9,7 @@ import {
   vfromAngle, wrapAngle, rand, randRange, randInt, chance, pick, TAU, PI,
   easeOutCubic, easeOutQuint, noise1,
 } from '../core/math.js';
+import { signatureFor } from './signatures.js';
 
 const MAX_PARTICLES = 2600;
 
@@ -58,14 +59,216 @@ export class Effects {
   }
 
   /**
-   * The frame a cursed technique earns when it connects. Scaled by how much the
-   * hit actually mattered so ordinary chip damage does not get the treatment.
+   * The frame a cursed technique earns when it connects.
+   *
+   * Every technique used to get the same frame in a different colour, which is
+   * why they read as interchangeable. Now the technique names an archetype and
+   * this plays it: the impact frame, a screen pop, and a body of effect whose
+   * silhouette belongs to that technique and no other.
+   *
+   * `weight` is how much the hit actually mattered, so chip damage still gets
+   * nothing and a finisher gets everything.
    */
-  techniqueImpact(pos, z, color, weight) {
+  techniqueImpact(pos, z, color, weight, info = null) {
     const s = clamp01(weight);
     if (s < 0.18) return;
-    this.impact(0.3 + s * 0.65, color || '#ffffff', s > 0.45,
-      0.22 + s * 0.22, { x: pos.x, y: pos.y, z: z ?? 1.3 }, s > 0.7);
+    const sig = signatureFor(Object.assign({ color }, info || {}));
+    const zz = z ?? 1.3;
+    const at = { x: pos.x, y: pos.y, z: zz };
+
+    // The frame itself, scaled by both the signature and the hit.
+    this.impact((0.3 + s * 0.65) * sig.impact, sig.color, s > 0.45,
+      0.22 + s * 0.22, at, sig.gash && s > 0.55);
+
+    // A screen pop, but only for hits that earned one — otherwise a flurry of
+    // weak hits strobes.
+    if (sig.flash && s > 0.5) {
+      const [fc, fs, ft, fm] = sig.flash;
+      this.flash(fc, fs * s, ft, fm);
+    }
+    this.archetype(sig.arch, at, sig.color, s, info?.angle ?? 0);
+  }
+
+  /**
+   * The body of a signature: what the hit looks like apart from the frame.
+   *
+   * Each case is built from the primitives already here, arranged so the
+   * silhouettes differ at a glance — rings that close versus rings that open,
+   * strokes across the hit versus shards growing out of it, forks versus dust.
+   */
+  archetype(arch, at, color, s, angle = 0) {
+    const { x, y, z } = at;
+    const n = (k) => Math.max(2, Math.round(k * (0.5 + s)));
+    switch (arch) {
+      case 'cut':
+        // Strokes across the hit, not along it: a cut reads by its length
+        // crossing the target, not by pointing at the camera.
+        for (let i = 0; i < 2; i++) {
+          const life = 0.28 + s * 0.2;
+          this.cut({
+            x, y, z, angle: angle + PI / 2,
+            lean: (i - 0.5) * 0.5, tilt: randRange(-0.25, 0.25),
+            len: 3.2 + s * 4, width: 0.1 + s * 0.14,
+            color, delay: i * 0.03, life, max: life,
+          });
+        }
+        break;
+
+      case 'collapse':
+        // Rings that close inward, and dust pulled toward the centre rather
+        // than thrown out — the opposite verb to every other archetype.
+        this.ring({ x, y, z, r: 2.6 + s * 2, target: 0.15, life: 0.34,
+          color, width: 0.14, flat: false });
+        this.ring({ x, y, z, r: 1.6, target: 0.1, life: 0.26,
+          color, width: 0.08, flat: false });
+        this.burst(x, y, z, n(14), {
+          color, speedMin: -9, speedMax: -3, lifeMax: 0.4, glow: 1,
+          gravity: 0, drag: 0.6, stretch: 0.7,
+        });
+        break;
+
+      case 'burst':
+        this.ring({ x, y, z, r: 0.2, target: 3 + s * 4, life: 0.3,
+          color, width: 0.18, flat: false });
+        this.burst(x, y, z, n(22), {
+          color, speedMax: 11 + s * 9, lifeMax: 0.55, glow: 1,
+          sizeMax: 0.18, stretch: 0.5,
+        });
+        break;
+
+      case 'crush':
+        // Weight. Two ground rings so the shockwave has an edge as well as a
+        // body, dust rather than sparks, a plume going straight up, and
+        // chunks of the floor. Nothing here glows much: a blunt hit is debris,
+        // not light, and that is what separates it from a burst.
+        this.ring({ x, y, z: 0.04, r: 0.3, target: 5 + s * 6, life: 0.55,
+          color, width: 0.5, flat: true });
+        this.ring({ x, y, z: 0.06, r: 0.3, target: 3.2 + s * 4, life: 0.34,
+          color: '#ffffff', width: 0.22, flat: true, alpha: 0.7 });
+        this.burst(x, y, 0.3, n(24), {
+          color: '#b9b2a6', speedMax: 9, lifeMax: 1.0, gravity: 9,
+          glow: 0.12, sizeMin: 0.1, sizeMax: 0.34, drag: 1.4,
+        });
+        // The plume: slow, tall, and it lingers after the ring has gone.
+        this.burst(x, y, 0.4, n(10), {
+          color: '#a8a096', speedMax: 2.2, lifeMin: 0.6, lifeMax: 1.3,
+          vzMin: 3, vzMax: 8, gravity: 3, glow: 0.05, sizeMax: 0.4, drag: 1.8,
+        });
+        this.burst(x, y, z, n(10), {
+          color, speedMax: 7, lifeMax: 0.7, kind: 'chunk', gravity: 16,
+          sizeMax: 0.2,
+        });
+        // 'scorch' is the only round decal style the 2D stack draws; a blunt
+        // hit borrows it in a neutral grey to read as crushed floor.
+        this.decal({ x, y, r: 1.6 + s * 1.8, color: '#15171c', style: 'scorch', alpha: 0.42 });
+        break;
+
+      case 'pierce': {
+        // One stroke straight through, and a spray out the far side.
+        const life = 0.26 + s * 0.16;
+        this.cut({
+          x, y, z, angle, lean: 0, tilt: randRange(-0.15, 0.15),
+          len: 5 + s * 5, width: 0.07 + s * 0.08, color, life, max: life,
+        });
+        this.burst(x + Math.cos(angle) * 0.9, y + Math.sin(angle) * 0.9, z, n(12), {
+          color, angle, spread: 0.5, speedMax: 13, lifeMax: 0.4,
+          glow: 1, stretch: 1.1,
+        });
+        break;
+      }
+
+      case 'scorch':
+        this.ring({ x, y, z, r: 0.2, target: 2.6 + s * 3, life: 0.4,
+          color, width: 0.22, flat: false });
+        this.burst(x, y, z, n(18), {
+          colors: [color, '#ffd166', '#6b2a10'], speedMax: 7, lifeMax: 1.1,
+          vzMin: 1.4, vzMax: 5, gravity: -2, glow: 1, sizeMax: 0.2,
+        });
+        this.decal({ x, y, r: 1.4 + s * 1.6, color: '#2a1206', style: 'scorch', alpha: 0.4 });
+        break;
+
+      case 'frost':
+        // Ice grows rather than expands: shards standing out of the hit, and a
+        // ring that opens slowly instead of snapping.
+        this.ring({ x, y, z, r: 0.2, target: 2.2 + s * 2, life: 0.7,
+          color, width: 0.1, flat: false });
+        for (let i = 0; i < n(7); i++) {
+          const a = (i / n(7)) * TAU + rand();
+          const d = randRange(0.4, 1.4 + s);
+          this.bolt(x, y, z - 0.4, x + Math.cos(a) * d, y + Math.sin(a) * d,
+            z + randRange(0.6, 1.8), {
+              color, width: randRange(0.06, 0.14), life: randRange(0.4, 0.8),
+              jag: 0.12, segments: 3,
+            });
+        }
+        break;
+
+      case 'arc':
+        // Forks, short and bright, plus one long one going off to the side.
+        for (let i = 0; i < n(6); i++) {
+          const a = rand() * TAU;
+          const d = randRange(1, 3.5 + s * 2);
+          this.bolt(x, y, z, x + Math.cos(a) * d, y + Math.sin(a) * d,
+            z + randRange(-0.8, 1.6), {
+              color: i % 3 === 0 ? '#ffffff' : color,
+              width: randRange(0.04, 0.1), life: randRange(0.1, 0.22),
+              jag: 0.6, segments: 8,
+            });
+        }
+        this.ring({ x, y, z, r: 0.1, target: 2 + s * 2, life: 0.18,
+          color, width: 0.07, flat: false });
+        break;
+
+      case 'soul':
+        // Nothing physical: concentric rings inside the target and no debris,
+        // because a soul hit does not move the body.
+        for (let i = 0; i < 3; i++) {
+          this.ring({ x, y, z, r: 0.1 + i * 0.3, target: 1.2 + i * 0.7,
+            life: 0.5 + i * 0.12, color, width: 0.06, flat: false, alpha: 0.7 });
+        }
+        this.burst(x, y, z, n(8), {
+          color, speedMax: 2.2, lifeMax: 0.9, gravity: -1, glow: 1, sizeMax: 0.1,
+        });
+        break;
+
+      case 'word':
+        // A sound: flat rings travelling outward along the ground.
+        for (let i = 0; i < 3; i++) {
+          this.ring({ x, y, z: 0.06 + i * 0.5, r: 0.3, target: 4 + s * 4,
+            life: 0.34 + i * 0.07, color, width: 0.1, flat: false, alpha: 0.6 });
+        }
+        break;
+
+      case 'surge':
+        this.ring({ x, y, z: 0.05, r: 0.2, target: 4 + s * 4, life: 0.55,
+          color, width: 0.34, flat: true });
+        this.burst(x, y, z, n(20), {
+          color, speedMax: 9, lifeMax: 0.8, gravity: 13, glow: 0.5,
+          sizeMax: 0.16, drag: 1.1,
+        });
+        break;
+
+      case 'beast':
+        // Claw strokes, fanned, plus a short spray. A shikigami does the
+        // hitting, so it reads as teeth rather than as energy.
+        for (let i = 0; i < 3; i++) {
+          const life = 0.22 + s * 0.14;
+          this.cut({
+            x, y, z, angle: angle + PI / 2,
+            lean: (i - 1) * 0.3, tilt: 0.4,
+            len: 2.4 + s * 2.4, width: 0.07,
+            color, delay: i * 0.015, life, max: life,
+          });
+        }
+        this.burst(x, y, z, n(10), {
+          color, angle, spread: 0.9, speedMax: 8, lifeMax: 0.4, glow: 0.8,
+        });
+        break;
+
+      default:
+        this.burst(x, y, z, n(14), { color, speedMax: 8, lifeMax: 0.5, glow: 0.8 });
+        break;
+    }
   }
 
   // -------------------------------------------------------------------------

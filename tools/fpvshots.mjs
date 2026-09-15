@@ -35,7 +35,9 @@ const state = () => page.evaluate(() => {
     fpv: +c.fpv.toFixed(3),
     fpvYaw: +c.fpvYaw.toFixed(3),
     camZ: +c.pos.z.toFixed(2),
-    playerZ: p ? +(p.z + 1.56).toFixed(2) : null,
+    // The rig derives the eye from the fighter's own height, so the
+    // expectation has to as well rather than assuming a 1.75m body.
+    playerZ: p ? +(p.z + p.height * c.eyeRatio).toFixed(2) : null,
     dFromHead: p ? +Math.hypot(c.pos.x - p.pos.x, c.pos.y - p.pos.y).toFixed(2) : null,
     aim: p ? +p.aim.toFixed(3) : null,
   };
@@ -70,7 +72,7 @@ const checks = [];
 const ok = (name, cond, extra = '') => { checks.push([name, cond, extra]); };
 ok('the mode flipped', fp.firstPerson === true);
 ok('the blend finished', fp.fpv > 0.95, `fpv ${fp.fpv}`);
-ok('the eye is at head height', Math.abs(fp.camZ - fp.playerZ) < 0.35,
+ok('the eye is at head height', Math.abs(fp.camZ - fp.playerZ) < 0.12,
    `cam ${fp.camZ} vs head ${fp.playerZ}`);
 ok('the eye is on the head, not orbiting it', fp.dFromHead < 0.6, `${fp.dFromHead}m away`);
 

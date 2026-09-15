@@ -484,7 +484,11 @@ class Game {
           const weight = frac * 5.2 + (ev.crit ? 0.2 : 0) +
             (isPlayerVictim || isPlayerAttacker ? 0.12 : -0.1);
           this.effects.techniqueImpact(ev.pos, ev.z,
-            ev.color || attacker?.technique?.color || '#ffffff', weight);
+            ev.color || attacker?.technique?.color || null, weight, {
+              abilityId: ev.abilityId,
+              techniqueId: ev.techniqueId || attacker?.technique?.id,
+              angle: ev.angle,
+            });
         }
       } else if (ev.type === 'abilityStart') {
         // Name the technique as it comes out, the way the show does.

@@ -66,7 +66,7 @@ function castProjectile(ctx) {
       angle: aim + off + jitter,
       z: self.z + 1.05,
       tags: ability.tags || ['technique'],
-      sourceName: ability.name,
+      sourceName: ability.name, abilityId: ability.id,
       ability,
       onHit: ability.onHit ? (e) => ability.onHit(Object.assign({}, ctx, e)) : null,
       pierceInfinity: p.pierceInfinity || ability.pierceInfinity,
@@ -93,7 +93,7 @@ function castBeam(ctx) {
         pierceInfinity: !!ability.pierceInfinity, sureHit: !!ability.sureHit,
         status: ability.status ? Object.assign({}, ability.status) : null,
         pos: { x: f.pos.x, y: f.pos.y }, angle: a,
-        hitstop: 0.07, sourceName: ability.name,
+        hitstop: 0.07, sourceName: ability.name, abilityId: ability.id,
       });
       if (ability.onHit) ability.onHit(Object.assign({}, ctx, { victim: f }));
     }
@@ -144,7 +144,7 @@ function castMelee(ctx) {
           pierceInfinity: !!ability.pierceInfinity,
           guardBreak: !!ability.guardBreak,
           status: ability.status ? Object.assign({}, ability.status) : null,
-          pos: { x: f.pos.x, y: f.pos.y }, hitstop: 0.07, sourceName: ability.name,
+          pos: { x: f.pos.x, y: f.pos.y }, hitstop: 0.07, sourceName: ability.name, abilityId: ability.id,
         });
         if (ability.onHit) ability.onHit(Object.assign({}, ctx, { victim: f }));
         if (ability.nullifyTechnique) world.nullifyFighterTechniques(f);
@@ -171,7 +171,7 @@ function castAoe(ctx) {
     damage: ability.damage, poise: ability.poise, knock: ability.knock || 6,
     lift: ability.lift || 0, tags: ability.tags || ['technique'],
     status: ability.status ? Object.assign({}, ability.status) : null,
-    sourceName: ability.name, burn: ability.burn,
+    sourceName: ability.name, abilityId: ability.id, burn: ability.burn,
   });
   world.fx(ability.vfx || 'burst', {
     pos: center, z: self.z, radius: ability.radius || 4,
@@ -192,7 +192,7 @@ function castCommand(ctx) {
       ignoreReinforce: ability.ignoreReinforce || 0,
       sureHit: true, // a command reaches the body directly
       status: ability.status ? Object.assign({}, ability.status) : null,
-      pos: { x: f.pos.x, y: f.pos.y }, hitstop: 0.08, sourceName: ability.name,
+      pos: { x: f.pos.x, y: f.pos.y }, hitstop: 0.08, sourceName: ability.name, abilityId: ability.id,
     });
     if (ability.onHit) ability.onHit(Object.assign({}, ctx, { victim: f }));
   }
@@ -255,7 +255,7 @@ function castDashStrike(ctx) {
       lift: ability.lift || 0, tags: ability.tags || ['technique', 'physical'],
       physical: true, backstab: ability.backstab || 0,
       status: ability.status ? Object.assign({}, ability.status) : null,
-      pos: { x: f.pos.x, y: f.pos.y }, hitstop: 0.09, sourceName: ability.name,
+      pos: { x: f.pos.x, y: f.pos.y }, hitstop: 0.09, sourceName: ability.name, abilityId: ability.id,
       pierceInfinity: !!ability.pierceInfinity || !!self.flags.pierceInfinity,
     });
     if (ability.onHit) ability.onHit(Object.assign({}, ctx, { victim: f }));
