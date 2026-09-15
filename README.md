@@ -236,7 +236,16 @@ lighting.
 
 ### Looking like the show
 
-The shading is two-tone with a hard terminator, not a ramp: four flat bands with
+The target is the later seasons rather than the early ones: crushed blacks, a
+nearly colourless world, and the cursed energy as the only saturated thing in
+frame. Three passes get there without a shader — the frame multiplied by itself
+at partial strength (squaring is a real tone curve, and darks fall away while
+brights barely move), a grey wash in `saturation` mode that additive energy is
+bright enough to survive, and a cool multiply with a warm screen that puts the
+two-tone back. Inside a domain both shift to that domain's key colour, so
+standing in one looks like standing in one.
+
+The shading under that is two-tone with a hard terminator, not a ramp: four flat bands with
 the break between them placed where a painter would put it, and the shadow band
 cooled and desaturated rather than simply dimmed — painted shadow reads as
 shadow, dimness reads as a mistake. On top of that the ink line is measured in
@@ -251,6 +260,29 @@ frame is downsampled and squared twice — which crushes the darks to nothing an
 leaves cursed energy almost intact — blurred, and added back. The grade cools
 the whole picture and lifts the warm end, and inside a domain it shifts to that
 domain's key colour, so standing in one *looks* like standing in one.
+
+### The Domain Expansion cutscene
+
+A domain expansion is the largest thing a sorcerer can do, and the show never
+treats it as another move coming out. It stops, cuts to the caster, lets them
+say the words, stamps the name, and only then closes the barrier. That sequence
+plays here, over the live simulation:
+
+1. **Seal** — black bars slam in, the shot *cuts* to a low tight angle on the
+   caster from a side the camera was not already on, and the colour drains out
+   of the world.
+2. **Chant** — a slow creep around and up while the incantation types itself in
+   under the caster's name.
+3. **Call** — 領域展開 rides in from the left, the domain's own name stamps in
+   from the right a beat later, the camera punches, everything whites out.
+4. **Close** — the camera rockets back and up over the barrier as it unfolds,
+   the bars slide out, and the rig gets the camera back over the last third
+   rather than snapping.
+
+The world runs at 42% speed for the duration, so it is cinematic in real time
+and nearly free in game time — and the opponent cannot simply walk through your
+chant. It aborts on the spot if the chant is interrupted, because a domain that
+got punched out of someone is not a cinematic. Switchable under Settings.
 
 ### Cuts
 

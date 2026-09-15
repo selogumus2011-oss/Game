@@ -178,7 +178,7 @@ export class Renderer3D {
       drawSpeedLines(ctx, W, H, 0.45, '#ffffff', this.time * 3);
     }
     this._bloom(ctx, W, H);
-    this._grade(ctx, W, H, world);
+    this._grade(ctx, W, H, world, this.drain || 0);
     this._veilIntro(ctx, W, H, dt, world);
     if (this.settings.vignette && this.vignetteCanvas) {
       ctx.drawImage(this.vignetteCanvas, 0, 0, W, H);
@@ -196,7 +196,7 @@ export class Renderer3D {
   // -------------------------------------------------------------------------
 
   _nameplates(ctx, world, cam) {
-    if (!this.settings.showNames) return;
+    if (!this.settings.showNames || this.drain > 0.05) return;
     ctx.save();
     ctx.textAlign = 'center';
     ctx.font = '600 11px system-ui, sans-serif';
@@ -279,9 +279,8 @@ export class Renderer3D {
       this.bloomCtx = b.getContext('2d');
     }
     const bc = this.bloomCtx;
-    bc.globalCompositeOperation = 'source-over';
+    bc.globalCompositeOperation = 'copy';
     bc.globalAlpha = 1;
-    bc.clearRect(0, 0, bw, bh);
     bc.drawImage(this.canvas, 0, 0, bw, bh);
     // Squaring once crushes darks; squaring twice leaves only what is genuinely
     // glowing, which is the point — bloom on the whole picture is just haze.
@@ -300,23 +299,61 @@ export class Renderer3D {
   }
 
   /**
-   * Colour grade. Anime keys its shadows cool and its highlights warm and holds
-   * the midtones tight, so the picture reads as painted rather than lit. A
-   * multiply pass cools and deepens everything, a screen pass lifts the warm
-   * end back, and inside a domain the whole grade shifts to that domain's key.
+   * Colour grade, keyed to the later seasons rather than the early ones.
+   *
+   * That look is built on crushed blacks and a nearly colourless world with the
+   * cursed energy as the only saturated thing in frame. Three passes get there
+   * without a shader:
+   *
+   *   CONTRAST  the frame multiplied by itself at partial strength. Squaring is
+   *             a real tone curve — darks fall away, brights barely move — and
+   *             it costs one composited draw.
+   *   DRAIN     a grey wash in 'saturation' mode pulls the colour out of the
+   *             picture. Additive energy was drawn so bright that it survives,
+   *             which is exactly the separation the show uses.
+   *   KEY       a cool multiply and a warm screen put the two-tone back, and
+   *             inside a domain both shift to that domain's colour.
    */
-  _grade(ctx, W, H, world) {
+  _grade(ctx, W, H, world, drain = 0) {
     if (!this.settings.grade) return;
     const dom = world.player?.insideDomain;
-    const tint = dom && !dom.closed ? dom.spec.color2 || '#0a0a14' : '#121a2a';
-    const c = hexToRgb(tint);
+    const inDom = dom && !dom.closed;
     ctx.save();
+
+    // Squaring needs a copy: compositing a canvas onto itself reads the
+    // destination while it is being written and bands the result.
+    if (this.quality > 0.5) {
+      const cw = Math.max(2, Math.round(W * 0.5));
+      const ch = Math.max(2, Math.round(H * 0.5));
+      let t = this.toneCanvas;
+      if (!t || t.width !== cw || t.height !== ch) {
+        t = this.toneCanvas = document.createElement('canvas');
+        t.width = cw; t.height = ch;
+        this.toneCtx = t.getContext('2d');
+      }
+      this.toneCtx.globalCompositeOperation = 'copy';
+      this.toneCtx.drawImage(this.canvas, 0, 0, cw, ch);
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.globalAlpha = 0.42;
+      ctx.drawImage(t, 0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+
+    const desat = clamp01(0.3 + drain * 0.62);
+    ctx.globalCompositeOperation = 'saturation';
+    ctx.globalAlpha = desat;
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+
+    const tint = inDom ? dom.spec.color2 || '#0a0a14' : '#0e1624';
+    const c = hexToRgb(tint);
     ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = `rgb(${204 + c[0] * 0.12 | 0},${210 + c[1] * 0.11 | 0},${226 + c[2] * 0.08 | 0})`;
+    ctx.fillStyle = `rgb(${196 + c[0] * 0.14 | 0},${202 + c[1] * 0.13 | 0},${222 + c[2] * 0.1 | 0})`;
     ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.07;
-    ctx.fillStyle = dom && !dom.closed ? dom.spec.color : '#2a1a10';
+    ctx.globalAlpha = 0.09;
+    ctx.fillStyle = inDom ? dom.spec.color : '#3a2414';
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }

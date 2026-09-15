@@ -140,6 +140,10 @@ export class Camera3 {
     this.y = 0;
     this.cine = 0;              // 0..1 cinematic sweep weight
     this.cineYaw = 0;
+    // A cutscene can take the rig away entirely: {yaw, pitch, dist, lookAt,
+    // weight}, blended in by weight so handing control back is a move rather
+    // than a snap. Cleared every frame by whoever set it.
+    this.override = null;
     this.rot = 0;               // screen roll, read by the 2D post stack
   }
 
@@ -287,6 +291,23 @@ export class Camera3 {
     this.lookAt.x = this.x;
     this.lookAt.y = this.y;
     this.lookAt.z = 1.1 + cineK * 0.5;
+
+    const o = this.override;
+    if (o) {
+      const w = clamp01(o.weight);
+      // Blend the shortest way round so a sweep past the seam does not spin
+      // the whole camera the long way home.
+      let d = o.yaw - this.yaw;
+      while (d > PI) d -= TAU;
+      while (d < -PI) d += TAU;
+      this.yaw += d * w;
+      this.pitch = lerp(this.pitch, o.pitch, w);
+      this.dist = lerp(this.dist, o.dist, w);
+      this.lookAt.x = lerp(this.lookAt.x, o.lookAt.x, w);
+      this.lookAt.y = lerp(this.lookAt.y, o.lookAt.y, w);
+      this.lookAt.z = lerp(this.lookAt.z, o.lookAt.z, w);
+      this.override = null;
+    }
 
     // Trauma decays quadratically — shake feels snappier than a linear falloff.
     this.trauma = Math.max(0, this.trauma - dt * 1.7);

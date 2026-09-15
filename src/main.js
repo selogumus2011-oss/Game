@@ -13,6 +13,7 @@ import { Camera3 } from './r3d/core3.js';
 import { Renderer3D } from './r3d/scene3.js';
 import { Effects } from './render/effects.js';
 import { Hud } from './render/hud.js';
+import { DomainCinematic } from './render/cinematic.js';
 import { UI } from './ui/menus.js';
 import { ROSTER, CHARACTERS } from './data/characters.js';
 import { TECHNIQUES } from './data/techniques.js';
@@ -36,6 +37,7 @@ class Game {
     this.camera = this.camera3d;
     this.effects = new Effects();
     this.hud = new Hud();
+    this.cinematic = new DomainCinematic();
     this.world = null;
     this.state = 'menu';
     this.chargeStart = -1;
@@ -88,6 +90,7 @@ class Game {
     audio.sfxVolume = s.sfxVolume;
     if (audio.sfxGain) audio.sfxGain.gain.value = s.sfxVolume;
     this.effects.quality = s.particles;
+    this.cinematic.enabled = s.cutscenes !== false;
     this.setRenderMode(s.render3d !== false);
     for (const r of [this.renderer2d, this.renderer3d]) {
       r.settings.grain = s.grain;
@@ -248,6 +251,8 @@ class Game {
       if (!w.over) this.readPlayerInput(dt, w);
       w.update(dt);
       this.drainWorld(w);
+      // The cutscene claims the camera before the follow rig reads it.
+      this.cinematic.update(dt, w, this.camera);
       this.camera.update(dt, w, w.player, this.input);
       this.updateDrones(w);
     } else if (this.state === 'menu') {
@@ -430,10 +435,14 @@ class Game {
         const caster = w.byId(ev.fighter);
         const spec = caster?.domainSpec();
         if (spec) {
-          this.hud.showDomainCutin({
-            jp: spec.jp, en: spec.name, chant: spec.chant,
-            color: spec.color, name: caster.name,
-          });
+          // The cutscene draws its own title cards, so the flat HUD cut-in is
+          // only the fallback for when cutscenes are switched off.
+          if (!this.cinematic.start(caster, spec, w)) {
+            this.hud.showDomainCutin({
+              jp: spec.jp, en: spec.name, chant: spec.chant,
+              color: spec.color, name: caster.name,
+            });
+          }
         }
       } else if (ev.type === 'domainOpen') {
         this.camera.punchZoom(-0.14);
@@ -498,10 +507,15 @@ class Game {
       return;
     }
     r.autoQuality(this.loop.fps);
+    // The cutscene drains the colour out of the world while it plays.
+    r.drain = this.cinematic.drain;
     this.effects.quality = (this.settings?.particles ?? 1) * r.quality;
     r.render(this.world, this.camera, this.effects, dt);
+    // The HUD steps aside for a cutscene — it is a different kind of shot.
+    this.hud.cinematicHidden = !!this.cinematic.active;
     this.hud.draw(ctx, this.world, this.camera, r.width, r.height, dt);
-    this.touch.draw(ctx, this.world.player);
+    this.cinematic.draw(ctx, r.width, r.height, dt);
+    if (!this.cinematic.active) this.touch.draw(ctx, this.world.player);
     if (this.state === 'paused') {
       ctx.save();
       ctx.fillStyle = 'rgba(4,5,8,0.55)';

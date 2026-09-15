@@ -48,7 +48,7 @@ export class UI {
     this.settings = {
       masterVolume: 0.7, sfxVolume: 0.9, musicVolume: 0.3,
       particles: 1, grain: true, shake: 1, assist: 0, showNames: true,
-      render3d: true,
+      render3d: true, cutscenes: true,
     };
   }
 
@@ -437,6 +437,7 @@ export class UI {
         ${slider('shake', 'Screen shake', 0, 1.5, 0.1)}
         ${slider('assist', 'Black Flash window assist', 0, 1, 0.1)}
         ${toggle('render3d', '3D renderer')}
+        ${toggle('cutscenes', 'Domain expansion cutscenes')}
         ${toggle('grain', 'Film grain')}
         ${toggle('showNames', 'Enemy name plates')}
         <p class="section-note">Turning the 3D renderer off falls back to the classic 2.5D

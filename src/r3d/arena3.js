@@ -145,8 +145,13 @@ export function drawGround3(dl, cam, world, S, q) {
   S.fogNear = 22;
   S.fogFar = far;
 
-  tileBand(dl, cam, S, pal, cx, cy, step, 0, near, R, world, q.detail > 0);
-  tileBand(dl, cam, S, pal, cx, cy, step * 3.5, near, far, R, world, false);
+  // Both bands carry their grout. Dropping it from the far one was cheaper but
+  // left a brightness step down the seam between them — a grouted tile averages
+  // brighter than a plain one, so the near field read as a lit rectangle with
+  // darker ground either side of it.
+  const grout = q.detail > 0;
+  tileBand(dl, cam, S, pal, cx, cy, step, 0, near, R, world, grout);
+  tileBand(dl, cam, S, pal, cx, cy, step * 3, near, far, R, world, grout);
 
   // Ground marks: static scuffs baked by the sim's seeded RNG. They sit just
   // above the floor, and are small enough that their centroids sort cleanly.

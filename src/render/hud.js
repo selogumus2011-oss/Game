@@ -37,7 +37,7 @@ export class Hud {
   draw(ctx, world, cam, W, H, dt) {
     this.time += dt;
     const p = world.player;
-    if (!p || this.hidden) return;
+    if (!p || this.hidden || this.cinematicHidden) return;
 
     this.hpSmooth = lerp(this.hpSmooth, p.hpFraction, 1 - Math.exp(-14 * dt));
     this.hpChip = lerp(this.hpChip, p.hpFraction, 1 - Math.exp(-3 * dt));
