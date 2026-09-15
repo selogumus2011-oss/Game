@@ -95,5 +95,45 @@ function sample(setup, frames = 60) {
      `${xs.size} distinct x in 40 frames — stepping position reads as input lag`);
 }
 
+// --- smears ------------------------------------------------------------------
+// A smear is the shape between two drawings, so it can only exist because the
+// pose is held. It should appear on the fast part of a swing and nowhere else.
+{
+  const w = new World({ mode: 'training', arena: 'void', seed: 3 });
+  const p = w.spawnPlayer('yuji', { x: 0, y: 0, team: 0 });
+  const e = w.spawnCurse('larva', { team: 1 });
+  e.pos.x = 1.5; e.pos.y = 0;
+  p.startAction('heavy');
+  let t = 0;
+  let strikeFrames = 0;
+  let smeared = 0;
+  let idleSmears = 0;
+  let longest = 0;
+  for (let i = 0; i < 150; i++) {
+    w.update(DT);
+    t += DT;
+    updateRig3(p, DT, null);
+    const sk = pose3(p, t);
+    const P = sk.P;
+    const reach = sk.prev
+      ? Math.hypot(sk.hR.x - sk.prev.hR.x, sk.hR.y - sk.prev.hR.y, sk.hR.z - sk.prev.hR.z)
+      : 0;
+    const striking = P.strike > 0.05 && P.follow < 0.55;
+    if (striking) {
+      strikeFrames++;
+      if (reach > 0.12) { smeared++; longest = Math.max(longest, reach); }
+    } else if (reach > 0.12) {
+      idleSmears++;
+    }
+  }
+  ok('the previous drawing is kept, so a smear has something to span',
+     strikeFrames > 0 && smeared > 0, `${smeared} of ${strikeFrames} strike frames`);
+  ok('the smear is long enough to read', longest > 0.2, `longest ${longest.toFixed(3)}m`);
+  ok('it does not smear the whole swing', smeared < strikeFrames,
+     `${smeared}/${strikeFrames} — the settle should not smear`);
+  ok('and does not smear a fighter standing still', idleSmears < strikeFrames,
+     `${idleSmears} outside the strike`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

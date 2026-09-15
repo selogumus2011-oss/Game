@@ -391,6 +391,11 @@ export function pose3(f, time) {
   sk.weaponHand = sk.hR;
   sk.weaponElbow = sk.eR;
 
+  // Keep the drawing this one replaces. A smear is not a motion blur: it is
+  // the shape an animator draws *between* two drawings, so having the previous
+  // one is the whole requirement, and stepping the pose is what makes it
+  // available in the first place.
+  sk.prev = r.sk && r.sk !== sk ? r.sk : null;
   r.sk = sk;
   r.skIdx = idx;
   return sk;

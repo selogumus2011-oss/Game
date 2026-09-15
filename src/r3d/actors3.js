@@ -212,6 +212,33 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
   // --- arms -----------------------------------------------------------------
   const upW = LIMB_W.upperArm * Sc * build;
   const foW = LIMB_W.foreArm * Sc * build;
+
+  // The smear.
+  //
+  // During the one or two frames a strike actually occupies, an animator does
+  // not draw the arm twice in two places — they draw one elongated shape
+  // spanning where it was and where it is. That shape is only available
+  // because the pose is held: `sk.prev` is the drawing this one replaced, so
+  // the smear is literally the gap between two drawings rather than a motion
+  // blur bolted on after the fact.
+  //
+  // It is drawn before the arm so the arm sits on top of it, and it is the
+  // same flat colour as the sleeve rather than a transparent trail, because
+  // that is what is on the cel.
+  const P = sk.P;
+  const smearing = P.strike > 0.05 && P.follow < 0.55 && sk.prev && !vm;
+  if (smearing) {
+    const reach = Math.hypot(hR.x - sk.prev.hR.x, hR.y - sk.prev.hR.y, hR.z - sk.prev.hR.z);
+    // Below a finger's width of travel there is nothing to smear, and drawing
+    // one anyway just fattens the arm.
+    if (reach > 0.12 * Sc) {
+      emit(limbUnit(shade(sleeve, 1.12)),
+        boneTransform(rootMat, sk.prev.hR, hR, foW * 0.86, tmpMat), outline, 1.6);
+      emit(limbUnit(shade(sleeve, 1.12)),
+        boneTransform(rootMat, sk.prev.eR, eR, upW * 0.7, tmpMat), false);
+    }
+  }
+
   emit(armUnit(sleeve), boneTransform(rootMat, sL, eL, upW, tmpMat));
   emit(armUnit(sleeve), boneTransform(rootMat, sR, eR, upW, tmpMat));
   emit(limbUnit(sleeve), boneTransform(rootMat, eL, hL, foW, tmpMat));
