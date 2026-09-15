@@ -454,7 +454,7 @@ export function drawOutline(dl, cam, mesh, mat, scale = 1.0, color = [10, 10, 14
       sy[i] = cy - py * inv;
     } else { sx[i] = NaN; sy[i] = NaN; }
   }
-  const style = `rgb(${color[0]},${color[1]},${color[2]})`;
+  const style = inkStyle(mesh, color);
   const faces = mesh.f;
   for (let i = 0; i < mesh.nf; i++) {
     const i0 = faces[i * 3], i1 = faces[i * 3 + 1], i2 = faces[i * 3 + 2];
@@ -467,13 +467,57 @@ export function drawOutline(dl, cam, mesh, mat, scale = 1.0, color = [10, 10, 14
     const area = (bx - ax) * (ccy - ay) - (ccx - ax) * (by - ay);
     if (area <= 0) continue;                      // keep only back faces
 
-    // Offset every edge outward by px and take the corners where the offset
+    // Line weight follows the size of the form.
+    //
+    // A hand-inked drawing does not use one pen. Big forms — a torso, a thigh,
+    // a skull — carry a heavy contour; small details — fingers, a collar, a
+    // tuft of hair — carry a fine one. A single width everywhere is the tell
+    // of a shader rather than a hand, and it is why the fine parts of a model
+    // end up looking clotted while the big shapes look underdrawn.
+    //
+    // Projected area is the right proxy: it already folds in both how large
+    // the form is and how far away it is.
+    const w = px * clamp(Math.sqrt(area) * 0.036, 0.5, 1.8);
+
+    // Offset every edge outward by w and take the corners where the offset
     // edges meet. Pushing the corners radially from the centroid instead would
     // leave the middle of a long edge barely moved, so the ink would thin out
     // exactly where a silhouette is longest and most visible.
-    offsetTri(ax, ay, bx, by, ccx, ccy, px, poly);
+    offsetTri(ax, ay, bx, by, ccx, ccy, w, poly);
     dl.poly((sz[i0] + sz[i1] + sz[i2]) * 0.333333 + 0.02, poly, 3, style, false, 1);
   }
+}
+
+/**
+ * The ink colour for a mesh.
+ *
+ * Animation linework is rarely pure black. A line round skin is a deep brown,
+ * one round a blue coat is a deep blue — the contour belongs to the thing it
+ * encloses. Pure black everywhere flattens a drawing and makes every material
+ * read as the same plastic.
+ *
+ * The mesh's own average colour is a good enough stand-in for "the local
+ * tone", and it is cached on the mesh because it never changes.
+ */
+function inkStyle(mesh, base) {
+  let s = mesh._ink;
+  if (s === undefined) {
+    let r = 0, g = 0, b = 0;
+    const n = mesh.nf || 1;
+    for (let i = 0; i < n; i++) {
+      const c = mesh.fc[i];
+      r += c[0]; g += c[1]; b += c[2];
+    }
+    r /= n; g /= n; b /= n;
+    // A quarter of the way toward the local tone: enough to warm or cool the
+    // line, not enough to stop it reading as a line.
+    const k = 0.25;
+    s = `rgb(${Math.round(base[0] + (r - base[0]) * k)},`
+      + `${Math.round(base[1] + (g - base[1]) * k)},`
+      + `${Math.round(base[2] + (b - base[2]) * k)})`;
+    mesh._ink = s;
+  }
+  return s;
 }
 
 /** Outward normal of edge P->Q for a triangle whose screen area is positive. */
