@@ -382,16 +382,19 @@ export function drawMesh(dl, cam, mesh, mat, opts) {
       if (em) light = lerp(light, 1.3, em);
     }
 
-    let a = alpha;
+    const a = alpha;
+    let fogQ = 0;
     if (opts.fogNear !== undefined) {
       const fog = clamp01((depth - opts.fogNear) / Math.max(1, opts.fogFar - opts.fogNear));
-      light *= 1 - fog * 0.8;
+      // Quantised so the colour cache still hits; 8 steps is finer than the
+      // eye can pick out across an arena.
+      fogQ = Math.round(fog * 8);
     }
 
     poly[0] = ax; poly[1] = ay;
     poly[2] = bx; poly[3] = by;
     poly[4] = ccx; poly[5] = ccy;
-    dl.poly(depth, poly, 3, shadeColor(mesh.fc[i], light, tr, tg, tb), add, a);
+    dl.poly(depth, poly, 3, shadeColor(mesh.fc[i], light, tr, tg, tb, fogQ), add, a);
   }
 }
 

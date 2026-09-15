@@ -387,21 +387,56 @@ export function drawVeil3(dl, cam, world, S, time) {
  * draw list flushes.
  */
 const skyCache = new Map();
+/**
+ * The sky behind the arena.
+ *
+ * The gradient runs dark at the top and brightens all the way down to the
+ * haze the ground fades into. It used to brighten to a horizon band partway
+ * down and then darken again, which put a hard step wherever the arena's far
+ * edge happened to fall: hazed floor meeting a much darker sky reads as the
+ * world having been cut out and pasted on.
+ *
+ * On top of that sits a wide, low glow in the arena's own light colour. It is
+ * doing the job a sky does in the show — giving the silhouettes something to
+ * stand against, so a dark figure at distance still separates from the
+ * background instead of dissolving into it.
+ */
 export function drawSky(ctx, cam, arena, w, h) {
   const key = `${arena.id}:${w}x${h}`;
-  let g = skyCache.get(key);
-  if (!g) {
-    g = ctx.createLinearGradient(0, 0, 0, h);
-    const horizon = lift(arena.fog || '#0a0b10', 2.2);
-    const top = arena.timeOfDay === 'dusk' ? shade(arena.light || '#cfe0b0', 0.5)
-      : arena.timeOfDay === 'void' ? '#141a2a'
-      : lift(arena.ground || '#14161c', 1.9);
+  let entry = skyCache.get(key);
+  if (!entry) {
+    const haze = lift(arena.fog || '#0a0b10', 2.2);
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    const top = arena.timeOfDay === 'dusk' ? shade(arena.light || '#cfe0b0', 0.35)
+      : arena.timeOfDay === 'void' ? '#0d1220'
+      : shade(arena.fog || '#0a0b10', 1.0);
     g.addColorStop(0, top);
-    g.addColorStop(0.62, horizon);
-    g.addColorStop(1, shade(horizon, 0.72));
-    skyCache.set(key, g);
+    g.addColorStop(0.45, shade(haze, 0.72));
+    g.addColorStop(0.82, haze);
+    g.addColorStop(1, haze);
+
+    // The glow: centred below the frame so only its upper edge shows, which
+    // is what keeps it reading as distance rather than as a light source.
+    const glow = ctx.createRadialGradient(w * 0.5, h * 0.94, 0, w * 0.5, h * 0.94, h * 0.9);
+    const lit = shade(arena.light || '#9fb4d0', 0.5);
+    glow.addColorStop(0, hexA(lit, 0.34));
+    glow.addColorStop(0.45, hexA(lit, 0.12));
+    glow.addColorStop(1, hexA(lit, 0));
+
+    entry = { g, glow };
+    skyCache.set(key, entry);
     if (skyCache.size > 12) skyCache.clear();
   }
-  ctx.fillStyle = g;
+  ctx.fillStyle = entry.g;
   ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = entry.glow;
+  ctx.fillRect(0, 0, w, h);
+}
+
+function hexA(hex, a) {
+  const h = (hex || '#ffffff').replace('#', '');
+  const n = h.length === 3
+    ? h.split('').map((c) => parseInt(c + c, 16))
+    : [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  return `rgba(${n[0]},${n[1]},${n[2]},${a})`;
 }

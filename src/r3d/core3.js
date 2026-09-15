@@ -421,19 +421,47 @@ function bandOf(light) {
   return 4;
 }
 
-export function shadeColor(rgb, light, tintR = 1, tintG = 1, tintB = 1) {
+/** Haze colour distance blends toward. Set once per frame by the renderer. */
+let fogRgb = [16, 18, 26];
+export function setFogColor(rgb) {
+  if (rgb[0] === fogRgb[0] && rgb[1] === fogRgb[1] && rgb[2] === fogRgb[2]) return;
+  fogRgb = rgb;
+  // The cache holds already-fogged colours, so it has to go when the haze does.
+  colorCache.clear();
+}
+
+/**
+ * Shade one face colour.
+ *
+ * `fogQ` is distance haze in eight steps rather than a float, purely so the
+ * result stays cacheable — this runs per triangle per frame and the cache is
+ * what makes a software rasteriser affordable.
+ *
+ * Haze blends the colour toward the sky rather than multiplying it toward
+ * black. Darkening with distance reads as "the lights went out"; blending
+ * toward the horizon reads as air, and it is the difference between a flat
+ * backdrop and one with depth in it.
+ */
+export function shadeColor(rgb, light, tintR = 1, tintG = 1, tintB = 1, fogQ = 0) {
   const q = bandOf(light);
-  const key = ((rgb[0] << 16) | (rgb[1] << 8) | rgb[2]) * 4096 +
-    q * 64 + (Math.round(tintR * 3) << 4) + (Math.round(tintG * 3) << 2) + Math.round(tintB * 3);
+  const key = (((rgb[0] << 16) | (rgb[1] << 8) | rgb[2]) * 4096 +
+    q * 64 + (Math.round(tintR * 3) << 4) + (Math.round(tintG * 3) << 2) + Math.round(tintB * 3))
+    * 9 + fogQ;
   let s = colorCache.get(key);
   if (s === undefined) {
     const [l, br, bg, bb] = BANDS[q];
-    const r = Math.min(255, Math.round(rgb[0] * l * br * tintR));
-    const g = Math.min(255, Math.round(rgb[1] * l * bg * tintG));
-    const b = Math.min(255, Math.round(rgb[2] * l * bb * tintB));
+    let r = Math.min(255, Math.round(rgb[0] * l * br * tintR));
+    let g = Math.min(255, Math.round(rgb[1] * l * bg * tintG));
+    let b = Math.min(255, Math.round(rgb[2] * l * bb * tintB));
+    if (fogQ) {
+      const t = fogQ / 8;
+      r = Math.round(r + (fogRgb[0] - r) * t);
+      g = Math.round(g + (fogRgb[1] - g) * t);
+      b = Math.round(b + (fogRgb[2] - b) * t);
+    }
     s = `rgb(${r},${g},${b})`;
     colorCache.set(key, s);
-    if (colorCache.size > 24000) colorCache.clear();
+    if (colorCache.size > 40000) colorCache.clear();
   }
   return s;
 }

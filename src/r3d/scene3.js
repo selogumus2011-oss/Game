@@ -9,7 +9,7 @@
 // grain) run on top in 2D.
 
 import { clamp, clamp01, lerp, TAU, PI, rand, randRange } from '../core/math.js';
-import { Camera3, DrawList, matCompose, hexToRgb } from './core3.js';
+import { Camera3, DrawList, matCompose, hexToRgb, setFogColor } from './core3.js';
 import { drawMesh, drawOutline } from './geom3.js';
 import { drawFighter3, makeShade } from './actors3.js';
 import { drawGround3, drawProps3, drawVeil3, drawSky } from './arena3.js';
@@ -17,7 +17,25 @@ import { drawEffects3, drawImpactFrames, drawSpeedLines } from './fx3.js';
 import { drawDomain3, setDomainQuality3 } from './domains3.js';
 import { drawProjectiles3, drawSummonLinks3, drawTelegraphs3 } from './props3.js';
 import { shade } from './models3.js';
-import { pickDpr } from '../render/sprites.js';
+import { pickDpr, softSprite } from '../render/sprites.js';
+
+/**
+ * The horizon colour for an arena, as rgb.
+ *
+ * Deliberately the same expression drawSky() uses for its horizon stop, so the
+ * ground fades into exactly the band of sky it meets rather than into a
+ * slightly different colour, which shows up as a seam along the skyline.
+ */
+const hazeCache = new Map();
+function hazeRgb(arena) {
+  const id = arena?.id || 'default';
+  let v = hazeCache.get(id);
+  if (!v) {
+    v = hexToRgb(shade(arena?.fog || '#0a0b10', 2.2));
+    hazeCache.set(id, v);
+  }
+  return v;
+}
 
 export class Renderer3D {
   constructor(canvas) {
@@ -136,6 +154,9 @@ export class Renderer3D {
     S.key = 0.46;
     S.rim = 0.34;
 
+    // The haze the distance blends toward. It matches the horizon band of the
+    // sky, so far geometry meets the sky instead of stopping dead against it.
+    setFogColor(hazeRgb(world.arena));
     drawSky(ctx, cam, world.arena, W, H);
 
     const dl = this.dl;
@@ -149,17 +170,27 @@ export class Renderer3D {
       drawDomain3(dl, cam, d, S, this.q, this.time);
     }
 
+    // Everything standing on the ground breathes the same air. Without this a
+    // distant prop is a hard silhouette against a hazed floor, which reads as
+    // a sticker rather than as distance.
+    S.fogNear = 26;
+    S.fogFar = 96;
     drawProps3(dl, cam, world, S, this.q, this.time);
+    S.fogNear = undefined;
     drawTelegraphs3(dl, cam, world, S, this.time);
     drawVeil3(dl, cam, world, S, this.time);
 
+    S.fogNear = 30;
+    S.fogFar = 105;
     for (const f of world.fighters) {
       drawFighter3(dl, cam, f, this.time, dt, fx, S, this.q);
     }
+    S.fogNear = undefined;
     drawSummonLinks3(dl, cam, world, S, this.time);
     drawProjectiles3(dl, cam, world, S, this.q, this.time);
 
     drawEffects3(dl, cam, fx, S, this.q, this.time, world);
+    this._motes(dl, cam, world, dt);
 
     ctx.save();
     if (cam.roll) {
@@ -220,6 +251,67 @@ export class Renderer3D {
       ctx.globalAlpha = 1;
     }
     ctx.restore();
+  }
+
+  /**
+   * Ambient cursed energy.
+   *
+   * The air in this show is never empty — there is always something drifting
+   * through it, and its absence is most of what made this look like a diorama
+   * rather than a place. These are world-space points so they sort against
+   * geometry and parallax correctly; a screen-space overlay reads as dirt on
+   * the lens instead of as motes in the room.
+   *
+   * They live in a box that follows the camera's focus and wrap around inside
+   * it, so the count is fixed however far you walk.
+   */
+  _motes(dl, cam, world, dt) {
+    if (this.quality < 0.4) return;
+    const R = 19;
+    const H = 8;
+    if (!this.motes) {
+      this.motes = [];
+      const n = 260;
+      for (let i = 0; i < n; i++) {
+        this.motes.push({
+          x: randRange(-R, R), y: randRange(-R, R), z: randRange(0.2, H),
+          vx: randRange(-0.14, 0.14), vy: randRange(-0.14, 0.14),
+          vz: randRange(0.05, 0.4),
+          r: randRange(0.022, 0.07),
+          ph: rand() * TAU,
+          sp: randRange(0.6, 2.1),
+        });
+      }
+    }
+    const cx = cam.lookAt.x;
+    const cy = cam.lookAt.y;
+    // A domain tints the air it encloses; outside one it is the arena's own
+    // cursed-energy colour.
+    const dom = world.domains.find((d) => !d.closed);
+    const tint = dom ? dom.spec.color : (world.arena?.light || '#9fb4d0');
+    // Squared so the field thins fast when the frame is already struggling:
+    // atmosphere is the first thing that should go, not the last.
+    const qq = clamp01(this.quality);
+    const n = Math.round(this.motes.length * qq * qq);
+    for (let i = 0; i < n; i++) {
+      const m = this.motes[i];
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+      m.z += m.vz * dt;
+      if (m.z > H) { m.z = 0.15; m.x = cx + randRange(-R, R); m.y = cy + randRange(-R, R); }
+      // Wrap inside the box rather than respawning, so nothing pops in view.
+      let dx = m.x - cx, dy = m.y - cy;
+      if (dx > R) m.x -= R * 2; else if (dx < -R) m.x += R * 2;
+      if (dy > R) m.y -= R * 2; else if (dy < -R) m.y += R * 2;
+
+      cam.project(m.x, m.y, m.z, this._mp || (this._mp = { x: 0, y: 0, d: 0 }));
+      const p = this._mp;
+      if (p.d <= cam.near || p.d > 60) continue;
+      // Breathe, so the field shimmers instead of sitting there.
+      const a = 0.24 + 0.26 * (0.5 + 0.5 * Math.sin(this.time * m.sp + m.ph));
+      const px = Math.max(1, m.r * cam.f / p.d);
+      dl.sprite(p.d, p.x, p.y, px * 9, px * 9, softSprite(tint), a, true);
+    }
   }
 
   _weather(ctx, W, H, dt) {
