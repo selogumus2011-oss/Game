@@ -96,6 +96,24 @@ const sphereMesh = (c, r = 1, u = 8, v = 6) => cached(`sph:${c}:${r}:${u}:${v}`,
  * plates that give the anime read. Built in head-local space with the origin at
  * the neck joint, +x forward, sized for a 1.0 scale body.
  */
+/**
+ * A shadow tone for painted shapes baked into a model.
+ *
+ * The band table cools its shadows because painted shadow reads through hue
+ * rather than brightness; a shadow baked into geometry has to do the same or
+ * it reads as a smudge next to the shaded ones around it.
+ */
+function shadeCool(hex, k) {
+  const h = (hex || '#888888').replace('#', '');
+  const p = h.length === 3
+    ? h.split('').map((c) => parseInt(c + c, 16))
+    : [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  const r = Math.round(Math.min(255, p[0] * k * 0.90));
+  const g = Math.round(Math.min(255, p[1] * k * 0.95));
+  const bl = Math.round(Math.min(255, p[2] * k * 1.14));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${bl.toString(16).padStart(2, '0')}`;
+}
+
 function headMesh(a, opts = {}) {
   const skin = a.skin || '#e9c8ac';
   const hair = a.hair || '#1b1b22';
@@ -124,6 +142,26 @@ function headMesh(a, opts = {}) {
     // Ears.
     for (const s of [1, -1]) {
       b.merge(box(0.018, 0.05, 0.07, dark), matCompose(-0.015, s * 0.082, 0.055, 0, 0, 0));
+    }
+
+    // The shadow the fringe casts across the brow.
+    //
+    // This is the most recognisable thing about an animated face and the
+    // cheapest to get: a flat shape of shadow-tone skin sitting across the
+    // forehead, with a stepped lower edge rather than a straight one so it
+    // reads as painted rather than as a band. Without it a face is a blank
+    // light shape and no amount of correct shading elsewhere fixes it.
+    if (!opts.curse) {
+      const brow = shadeCool(skin, 0.68);
+      // Two overlapping plates: the upper one full width, the lower one
+      // narrower and offset, which gives the edge a break in it.
+      b.merge(box(0.01, 0.175, 0.052, brow, { z0: -0.006 }),
+        matCompose(0.0855, 0, 0.168, 0, 0, 0));
+      b.merge(box(0.01, 0.105, 0.03, brow, { z0: -0.006 }),
+        matCompose(0.0855, -0.022, 0.146, 0, 0, 0));
+      // And the one under the jaw, which is what gives a chin its shape.
+      b.merge(box(0.01, 0.12, 0.022, brow, { z0: -0.006 }),
+        matCompose(0.079, 0, 0.055, 0, 0, 0));
     }
 
     // Eyes: flat plates set just proud of the face so they never z-fight.

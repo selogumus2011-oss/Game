@@ -17,11 +17,17 @@ const tmp2 = new Float32Array(16);
 /**
  * Arena palettes are authored for a flat 2D wash, where the colour you write is
  * the colour that lands on screen. Under real lighting the same values are
- * multiplied by a shading term and a grade, and a floor written as #161d18
- * comes out as near-black. Everything the arena supplies is lifted on the way
- * into the 3D renderer so the authored colour is what the lit surface reads as.
+ * multiplied by a shading term, so they are lifted on the way into the 3D
+ * renderer.
+ *
+ * The lift used to be much larger, because the old shading almost never landed
+ * a surface on its base colour and needed compensating for. Now that a lit
+ * surface sits exactly on 1.0, that compensation double-counts: it was turning
+ * floor seams into glowing lines and the ground into a brighter, more
+ * saturated colour than anything standing on it. A painted background sits
+ * *back*; it is never the loudest thing in the frame.
  */
-const LIFT = 1.6;
+const LIFT = 1.18;
 const lift = (c, k = LIFT) => shade(c || '#202020', k);
 
 // ---------------------------------------------------------------------------
@@ -137,7 +143,10 @@ export function drawGround3(dl, cam, world, S, q) {
   const step = q.detail > 1 ? 2.5 : 3.5;
   const near = q.detail > 1 ? 24 : 18;
   const far = q.detail > 0 ? 78 : 50;
-  const pal = [lift(a.ground), lift(a.groundAlt), lift(a.grid, LIFT * 1.35)];
+  // Seams are darker than the tiles they separate, not brighter. A floor seam
+  // is a gap — light does not come out of it. Drawing the grid as a bright
+  // line was reading as a sci-fi hologram rather than as paving.
+  const pal = [lift(a.ground), lift(a.groundAlt), lift(a.grid, LIFT * 0.52)];
 
   S.additive = false;
   S.tint = null;
