@@ -342,7 +342,7 @@ export function drawProps3(dl, cam, world, S, q, time) {
     matCompose(p.pos.x, p.pos.y, 0, tiltX, tiltY, p.rot, sx, sx, p.height, tmp);
     S.tint = dmg > 0.3 ? [1 - dmg * 0.25, 1 - dmg * 0.35, 1 - dmg * 0.35] : null;
     drawMesh(dl, cam, mesh, tmp, S);
-    if (q.outlines && q.detail > 1) drawOutline(dl, cam, mesh, tmp, 1, [10, 10, 14], 1.8);
+    if (q.outlines && q.detail > 1) drawOutline(dl, cam, mesh, tmp, 1, [10, 10, 14], 1.8, d < 26);
   }
   S.tint = null;
   S.fogNear = undefined;

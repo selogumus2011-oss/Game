@@ -85,6 +85,10 @@ const frame = (opts) => page.evaluate((o) => {
     foe.timeSinceHit = 9; foe.statuses.length = 0; foe.amplify = null;
   }
 
+  // Whatever the fight was doing when the loop stopped is still on screen;
+  // a lattice of cuts across the frame makes the model impossible to judge.
+  g.effects.clear();
+
   const c = g.camera3d;
   c.cine = 0; c.override = null; c.fpv = 0; c.fpvTarget = 0; c.trauma = 0;
   c.shake.x = c.shake.y = c.shake.z = 0; c.roll = 0;

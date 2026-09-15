@@ -94,6 +94,9 @@ export function drawFighter3(dl, cam, f, time, dt, fx, S, q) {
     // readable against the ground.
     outlines: q.outlines && lod < 2,
     inkScale: q.inkScale ?? 1,
+    // Interior seams only on the near tier. Further out they are sub-pixel and
+    // the contour is doing all the work anyway.
+    interior: lod === 0 && (q.detail ?? 2) > 0,
     detail: lod === 0 ? q.detail : lod === 1 ? Math.min(1, q.detail) : 0,
     viewModel,
   };
@@ -174,9 +177,10 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
   const ink = [8, 8, 12];
   const inkK = q.inkScale ?? 1;
   // `olScale` is an ink width in pixels, not a hull scale.
+  const inner = !!q.interior;
   const emit = (mesh, mat, ol = outline, olScale = 2.4) => {
     drawMesh(dl, cam, mesh, mat, S);
-    if (ol) drawOutline(dl, cam, mesh, mat, 1, ink, olScale * inkK);
+    if (ol) drawOutline(dl, cam, mesh, mat, 1, ink, olScale * inkK, inner);
   };
 
   const vm = q.viewModel;
@@ -398,7 +402,7 @@ function drawCurseBody(dl, cam, f, sk, S, q, time) {
       w * k, w * k, s * k * breathe, tmpMat2);
     matMul(rootMat, tmpMat2, tmpMat);
     drawMesh(dl, cam, p.mesh, tmpMat, S);
-    if (outline) drawOutline(dl, cam, p.mesh, tmpMat, 1, ink, 2.4 * inkK);
+    if (outline) drawOutline(dl, cam, p.mesh, tmpMat, 1, ink, 2.4 * inkK, !!q.interior);
   }
 }
 

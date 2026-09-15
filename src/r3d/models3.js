@@ -326,32 +326,91 @@ function maneMesh(a) {
 // Torso, coat, tools
 // ---------------------------------------------------------------------------
 
+/**
+ * The jacket.
+ *
+ * This used to be three stacked boxes with a strip down the front, which under
+ * flat cel shading merged into one slab with a floating red line on it. Now
+ * that interior lines are drawn, the garment can carry the structure a drawn
+ * one does — and has to, because the lines make the absence of it obvious.
+ *
+ * What a cel character's jacket actually needs, in rough order of how much it
+ * matters at gameplay distance:
+ *
+ *   * A **shoulder seam** where the sleeve joins. It is the line that tells
+ *     you an arm is an arm and not a growth off the chest.
+ *   * **Lapels** — two angled panels off the collar. They break up the chest,
+ *     which is otherwise the largest empty area on the whole figure.
+ *   * A **hem** at the bottom, so the jacket ends rather than fading into the
+ *     hips.
+ *   * A **centre seam**, recessed rather than proud, so it reads as a join and
+ *     not as a stripe stuck on.
+ *
+ * Authored spanning z 0..1: the caller stretches it from hip to neck.
+ */
 function torsoMesh(a, f) {
   // Uniform colours are authored dark for a flat 2D fill; under a lit shader
   // they need lifting or the whole body reads as a silhouette.
   const uniform = shade(a.uniform || f.color2 || '#171a22', 1.55);
   const accent = a.accent || f.color || '#8ad8ff';
-  const key = `torso:${uniform}:${accent}:${a.scarf ? 1 : 0}`;
+  const key = `torso2:${uniform}:${accent}:${a.scarf ? 1 : 0}`;
   return cached(key, () => {
     const b = new MeshBuilder();
-    const lit = shade(uniform, 1.25);
-    const dark = shade(uniform, 0.7);
+    const lit = shade(uniform, 1.22);
+    const dark = shade(uniform, 0.74);
+    const deep = shade(uniform, 0.5);
+
     // Waist, cinched. A straight tube reads as a mannequin; the taper in and
     // then out again is most of what makes a silhouette look like a person.
-    b.merge(taperedBox(0.27, 0.37, 0.235, 0.325, 0.28, dark), matCompose(0, 0, 0, 0, 0, 0));
-    // Ribcage, flaring to the shoulders.
-    b.merge(taperedBox(0.235, 0.325, 0.33, 0.47, 0.56, uniform, {
+    b.merge(taperedBox(0.27, 0.37, 0.235, 0.325, 0.26, dark), matCompose(0, 0, 0, 0, 0, 0));
+    // Hem: the jacket has a bottom edge, and it is a different tone so the
+    // line finder inks it.
+    b.merge(taperedBox(0.285, 0.385, 0.275, 0.375, 0.045, deep), matCompose(0, 0, 0.255, 0, 0, 0));
+    // Ribcage, flaring to the shoulders — but not as far as it was. A chest
+    // that keeps widening to the very top gives the figure a flat shelf to
+    // hang the arms off, which reads as a sandwich board.
+    b.merge(taperedBox(0.24, 0.33, 0.30, 0.40, 0.53, uniform, {
       sideColor: uniform, rightColor: lit, leftColor: dark,
-    }), matCompose(0, 0, 0.28, 0, 0, 0));
-    // Shoulder yoke: the flat top the arms hang from.
-    b.merge(taperedBox(0.33, 0.47, 0.29, 0.42, 0.08, lit), matCompose(0, 0, 0.84, 0, 0, 0));
+    }), matCompose(0, 0, 0.3, 0, 0, 0));
+
+    // Lapels: two strips running from the waist up and outward to the collar,
+    // making the V that breaks up the chest. Mirrored by leaning them opposite
+    // ways rather than by rotating one of them half a turn, which puts it
+    // round the back.
+    //
+    // Rotating about x tips the strip's own +z toward -y, so a negative angle
+    // on the left and a positive one on the right opens the V upward.
+    for (const sgn of [1, -1]) {
+      b.merge(box(0.024, 0.08, 0.37, lit),
+        matCompose(0.108, sgn * 0.012, 0.44, -sgn * 0.34, -0.05, 0));
+    }
+
+    // Centre seam, recessed into the chest rather than sitting on it.
+    b.merge(box(0.018, 0.028, 0.5, deep, { z0: 0 }), matCompose(0.113, 0, 0.3, 0, -0.04, 0));
+
+    // Shoulder yoke, tapering in as it rises so the top of the torso is a
+    // slope into the neck rather than a plate.
+    b.merge(taperedBox(0.30, 0.40, 0.235, 0.30, 0.075, lit), matCompose(0, 0, 0.83, 0, 0, 0));
+
+    // Deltoid caps: the shoulder itself, sloping down and outward to where the
+    // sleeve starts. Without them an arm grows straight out of the side of the
+    // chest at a right angle.
+    for (const sgn of [1, -1]) {
+      b.merge(taperedBox(0.27, 0.11, 0.2, 0.075, 0.12, uniform, { topColor: lit }),
+        matCompose(0, sgn * 0.175, 0.78, sgn * 0.42, 0, 0));
+      // Shoulder seam: a narrow band where the sleeve is set in. The single
+      // most useful line on the whole figure.
+      b.merge(box(0.28, 0.028, 0.055, deep), matCompose(0, sgn * 0.196, 0.80, 0, 0, 0));
+    }
+
     // Collar, standing.
-    b.merge(taperedBox(0.2, 0.3, 0.155, 0.225, 0.11, lit), matCompose(0, 0, 0.9, 0, 0, 0));
+    b.merge(taperedBox(0.2, 0.3, 0.155, 0.225, 0.115, dark), matCompose(0, 0, 0.895, 0, 0, 0));
+    // Collar band, a tone apart so its top edge inks.
+    b.merge(taperedBox(0.16, 0.235, 0.15, 0.22, 0.028, accent), matCompose(0, 0, 0.982, 0, 0, 0));
+
     // Belt.
-    b.merge(taperedBox(0.29, 0.39, 0.28, 0.38, 0.055, shade(uniform, 0.45)),
-      matCompose(0, 0, 0.19, 0, 0, 0));
-    // Front placket — the jujutsu uniform's line of buttons.
-    b.merge(box(0.02, 0.05, 0.6, accent, { z0: 0 }), matCompose(0.16, 0, 0.3, 0, -0.06, 0));
+    b.merge(taperedBox(0.29, 0.39, 0.28, 0.38, 0.05, deep), matCompose(0, 0, 0.2, 0, 0, 0));
+
     if (a.scarf) {
       b.merge(cylinder(0.14, 0.13, 0.1, 8, accent), matCompose(0, 0, 0.86, 0, 0, 0));
       b.merge(taperedBox(0.06, 0.13, 0.04, 0.08, 0.36, accent),

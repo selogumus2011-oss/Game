@@ -278,8 +278,15 @@ export function bake(parts) {
  */
 const RIM_EDGE = 0.62;
 
-const scratch = { x: new Float32Array(4096), y: new Float32Array(4096), z: new Float32Array(4096) };
+const scratch = {
+  x: new Float32Array(4096), y: new Float32Array(4096), z: new Float32Array(4096),
+  front: new Uint8Array(4096),
+};
 const poly = new Float32Array(8);
+
+function ensureFront(n) {
+  if (!scratch.front || scratch.front.length < n) scratch.front = new Uint8Array(n * 2);
+}
 
 function ensureScratch(n) {
   if (scratch.x.length < n) {
@@ -413,6 +420,89 @@ export function drawMesh(dl, cam, mesh, mat, opts) {
 }
 
 /**
+ * The interior lines of a drawing.
+ *
+ * An inverted hull gives a silhouette and nothing else, which is why these
+ * models were reading as flat fields inside a contour. A drawn character has
+ * lines *inside* the outline too — round the collar, along the belt, down the
+ * placket, across a cuff, at the corner of a shoulder — and their absence is
+ * most of what makes a cel-shaded model look unfinished.
+ *
+ * Two kinds of edge earn a line:
+ *
+ *   * A **crease**, where two faces meet at a sharp angle. On these models,
+ *     which are assembled from boxes, that catches the corner of every form —
+ *     which is exactly where an inker puts a line.
+ *   * A **material boundary**, where the faces either side are different
+ *     colours. Under flat cel shading two nearby tones land in the same band
+ *     and merge into one field, so the line is the only thing keeping a collar
+ *     from disappearing into a chest.
+ *
+ * Both are static properties of the mesh, so the edge list is built once and
+ * cached on it. Vertices are welded by position first: the models are merged
+ * from separate primitives that abut without sharing vertices, and without
+ * welding almost nothing would be adjacent to anything.
+ */
+const CREASE_COS = Math.cos(0.9);        // about 52 degrees
+
+function inkEdges(mesh) {
+  let e = mesh._edges;
+  if (e !== undefined) return e;
+
+  const nv = mesh.nv;
+  const nf = mesh.nf;
+  const v = mesh.v;
+
+  // Weld by quantised position so abutting primitives share their seams.
+  const canon = new Int32Array(nv);
+  const at = new Map();
+  for (let i = 0; i < nv; i++) {
+    const key = `${Math.round(v[i * 3] * 8192)},${Math.round(v[i * 3 + 1] * 8192)},${Math.round(v[i * 3 + 2] * 8192)}`;
+    const found = at.get(key);
+    if (found === undefined) { at.set(key, i); canon[i] = i; } else canon[i] = found;
+  }
+
+  // Model-space face normals, for the dihedral test.
+  const nx = new Float32Array(nf), ny = new Float32Array(nf), nz = new Float32Array(nf);
+  const faces = mesh.f;
+  for (let i = 0; i < nf; i++) {
+    const a = faces[i * 3] * 3, b = faces[i * 3 + 1] * 3, c = faces[i * 3 + 2] * 3;
+    const e1x = v[b] - v[a], e1y = v[b + 1] - v[a + 1], e1z = v[b + 2] - v[a + 2];
+    const e2x = v[c] - v[a], e2y = v[c + 1] - v[a + 1], e2z = v[c + 2] - v[a + 2];
+    let x = e1y * e2z - e1z * e2y;
+    let y = e1z * e2x - e1x * e2z;
+    let z = e1x * e2y - e1y * e2x;
+    const L = Math.hypot(x, y, z) || 1;
+    nx[i] = x / L; ny[i] = y / L; nz[i] = z / L;
+  }
+
+  // Collect edges by their welded endpoint pair, keeping the two faces.
+  const seen = new Map();
+  const out = [];
+  for (let i = 0; i < nf; i++) {
+    for (let k = 0; k < 3; k++) {
+      const a = canon[faces[i * 3 + k]];
+      const b = canon[faces[i * 3 + ((k + 1) % 3)]];
+      if (a === b) continue;
+      const key = a < b ? a * 1048576 + b : b * 1048576 + a;
+      const prev = seen.get(key);
+      if (prev === undefined) { seen.set(key, { v0: faces[i * 3 + k], v1: faces[i * 3 + ((k + 1) % 3)], f: i }); continue; }
+      if (prev.done) continue;          // three or more faces: not a clean edge
+      prev.done = true;
+      const fa = prev.f, fb = i;
+      const dot = nx[fa] * nx[fb] + ny[fa] * ny[fb] + nz[fa] * nz[fb];
+      const ca = mesh.fc[fa], cb = mesh.fc[fb];
+      const material = ca[0] !== cb[0] || ca[1] !== cb[1] || ca[2] !== cb[2];
+      if (dot < CREASE_COS || material) out.push(prev.v0, prev.v1, fa, fb);
+    }
+  }
+
+  e = out.length ? new Int32Array(out) : null;
+  mesh._edges = e;
+  return e;
+}
+
+/**
  * Inverted-hull outline: draw the mesh's back faces in near-black behind it,
  * expanded outward so they poke out around the silhouette. Classic cel-shading
  * trick, and cheap here because it reuses the same buffers.
@@ -424,7 +514,8 @@ export function drawMesh(dl, cam, mesh, mat, opts) {
  * own centroid instead gives a line of constant weight at every depth, which is
  * how cel animation actually looks: the line does not thin out with the drawing.
  */
-export function drawOutline(dl, cam, mesh, mat, scale = 1.0, color = [10, 10, 14], px = 2.2) {
+export function drawOutline(dl, cam, mesh, mat, scale = 1.0, color = [10, 10, 14], px = 2.2,
+  interior = true) {
   const nv = mesh.nv;
   ensureScratch(nv);
   const view = cam.view;
@@ -456,16 +547,28 @@ export function drawOutline(dl, cam, mesh, mat, scale = 1.0, color = [10, 10, 14
   }
   const style = inkStyle(mesh, color);
   const faces = mesh.f;
-  for (let i = 0; i < mesh.nf; i++) {
+  const nf = mesh.nf;
+  // Which way each face is turned this frame. The hull needs it anyway, and
+  // the interior lines need it to avoid drawing the seams on the far side of
+  // the model through the near side.
+  ensureFront(nf);
+  const front = scratch.front;
+  for (let i = 0; i < nf; i++) {
     const i0 = faces[i * 3], i1 = faces[i * 3 + 1], i2 = faces[i * 3 + 2];
     const ax = sx[i0], ay = sy[i0];
-    if (ax !== ax) continue;
     const bx = sx[i1], by = sy[i1];
-    if (bx !== bx) continue;
     const ccx = sx[i2], ccy = sy[i2];
-    if (ccx !== ccx) continue;
+    if (ax !== ax || bx !== bx || ccx !== ccx) { front[i] = 2; continue; }
+    front[i] = (bx - ax) * (ccy - ay) - (ccx - ax) * (by - ay) < 0 ? 1 : 0;
+  }
+
+  for (let i = 0; i < nf; i++) {
+    if (front[i] !== 0) continue;                 // keep only back faces
+    const i0 = faces[i * 3], i1 = faces[i * 3 + 1], i2 = faces[i * 3 + 2];
+    const ax = sx[i0], ay = sy[i0];
+    const bx = sx[i1], by = sy[i1];
+    const ccx = sx[i2], ccy = sy[i2];
     const area = (bx - ax) * (ccy - ay) - (ccx - ax) * (by - ay);
-    if (area <= 0) continue;                      // keep only back faces
 
     // Line weight follows the size of the form.
     //
@@ -485,6 +588,32 @@ export function drawOutline(dl, cam, mesh, mat, scale = 1.0, color = [10, 10, 14
     // exactly where a silhouette is longest and most visible.
     offsetTri(ax, ay, bx, by, ccx, ccy, w, poly);
     dl.poly((sz[i0] + sz[i1] + sz[i2]) * 0.333333 + 0.02, poly, 3, style, false, 1);
+  }
+
+  // --- interior lines --------------------------------------------------------
+  // Only worth walking the edge list where the result can actually be seen.
+  // On a figure twenty metres away every seam is sub-pixel, and the cost of
+  // proving that one edge at a time is most of what the pass costs.
+  if (!interior) return;
+  const edges = inkEdges(mesh);
+  if (!edges) return;
+  // Finer than the contour. An inker uses a heavier pen for the outside of a
+  // form than for the detail inside it, and interior lines at contour weight
+  // turn a collar into a black bar.
+  const iw = Math.max(0.8, px * 0.52);
+  for (let i = 0; i < edges.length; i += 4) {
+    const fa = edges[i + 2], fb = edges[i + 3];
+    const va = front[fa], vb = front[fb];
+    // Drawn only where the surface it belongs to is actually facing us. A seam
+    // on the far side of the body would otherwise print through the near side,
+    // because this is a painter's algorithm with no depth buffer to stop it.
+    if (va !== 1 && vb !== 1) continue;
+    const v0 = edges[i], v1 = edges[i + 1];
+    const x0 = sx[v0], y0 = sy[v0], x1 = sx[v1], y1 = sy[v1];
+    if (x0 !== x0 || x1 !== x1) continue;
+    // Sub-pixel edges are noise, not detail.
+    if (Math.abs(x1 - x0) + Math.abs(y1 - y0) < 2.2) continue;
+    dl.line((sz[v0] + sz[v1]) * 0.5 - 0.03, x0, y0, x1, y1, style, iw, false, 1);
   }
 }
 
