@@ -477,6 +477,7 @@ function inkEdges(mesh) {
   }
 
   // Collect edges by their welded endpoint pair, keeping the two faces.
+  const minLen = (mesh.radius || 1) * 0.055;
   const seen = new Map();
   const out = [];
   for (let i = 0; i < nf; i++) {
@@ -493,7 +494,15 @@ function inkEdges(mesh) {
       const dot = nx[fa] * nx[fb] + ny[fa] * ny[fb] + nz[fa] * nz[fb];
       const ca = mesh.fc[fa], cb = mesh.fc[fb];
       const material = ca[0] !== cb[0] || ca[1] !== cb[1] || ca[2] !== cb[2];
-      if (dot < CREASE_COS || material) out.push(prev.v0, prev.v1, fa, fb);
+      if (dot >= CREASE_COS && !material) continue;
+      // Drop edges that are tiny relative to the whole model. They are
+      // sub-pixel at any distance you would actually see the model from, and
+      // the per-frame test that proves it costs two projections each — which,
+      // across a head made of a dozen hair clumps, is most of the pass.
+      const a3 = prev.v0 * 3, b3 = prev.v1 * 3;
+      const len = Math.hypot(v[b3] - v[a3], v[b3 + 1] - v[a3 + 1], v[b3 + 2] - v[a3 + 2]);
+      if (len < minLen) continue;
+      out.push(prev.v0, prev.v1, fa, fb);
     }
   }
 

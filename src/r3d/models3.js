@@ -209,6 +209,33 @@ function headMesh(a, opts = {}) {
       topColor: hairLit,
     }), matCompose(-0.004, 0, 0.16, 0, 0, 0));
 
+    /**
+     * The fringe.
+     *
+     * A cap on its own is a helmet. What makes drawn hair read as hair is the
+     * clumps hanging over the brow: separate wedges, pointed at the tip, of
+     * uneven length, with gaps between them. The unevenness is the whole
+     * trick — five identical spikes read as a crown, five different ones read
+     * as hair that fell that way.
+     *
+     * They hang over the forehead shadow rather than above it, so the shadow
+     * looks cast by them instead of painted on underneath.
+     */
+    const fringe = () => {
+      const lens = [0.085, 0.115, 0.098, 0.125, 0.079];
+      const leans = [-0.26, -0.1, 0.05, -0.14, 0.22];
+      for (let i = 0; i < 5; i++) {
+        const y = -0.076 + i * 0.038;
+        b.merge(taperedBox(0.055, 0.042, 0.014, 0.012, lens[i], i % 2 ? hair : hairLit),
+          matCompose(0.062, y, 0.215, leans[i], PI - 0.33, 0));
+      }
+      // Side locks, framing the face. Longer, and angled back along the cheek.
+      for (const sgn of [1, -1]) {
+        b.merge(taperedBox(0.06, 0.05, 0.018, 0.016, 0.155, hairDark),
+          matCompose(0.028, sgn * 0.086, 0.21, sgn * 0.18, PI - 0.1, 0));
+      }
+    };
+
     switch (style) {
       case 'none': break;
       case 'buzz':
@@ -216,6 +243,7 @@ function headMesh(a, opts = {}) {
         break;
       case 'short':
         cap(0.075, hair);
+        fringe();
         b.merge(box(0.03, 0.17, 0.05, hair), matCompose(0.075, 0, 0.19, 0, -0.3, 0));
         break;
       case 'slick':
@@ -224,6 +252,7 @@ function headMesh(a, opts = {}) {
         break;
       case 'bob':
         cap(0.075, hair);
+        fringe();
         for (const s of [1, -1]) {
           b.merge(box(0.15, 0.04, 0.17, hair), matCompose(-0.005, s * 0.095, 0.03, 0, 0, 0));
         }
@@ -231,10 +260,12 @@ function headMesh(a, opts = {}) {
         break;
       case 'bun':
         cap(0.07, hair);
+        fringe();
         b.merge(sphere(0.062, 6, 5, hair), matCompose(-0.1, 0, 0.245, 0, 0, 0));
         break;
       case 'braid':
         cap(0.07, hair);
+        fringe();
         for (let i = 0; i < 4; i++) {
           b.merge(box(0.05, 0.055, 0.06, i % 2 ? hair : hairDark),
             matCompose(-0.1 - i * 0.008, 0, 0.17 - i * 0.062, 0, 0, 0));
@@ -242,6 +273,7 @@ function headMesh(a, opts = {}) {
         break;
       case 'messy':
         cap(0.08, hair);
+        fringe();
         for (let i = 0; i < 7; i++) {
           const ang = (i / 7) * TAU;
           b.merge(cone(0.032, 0.075 + (i % 3) * 0.02, 4, i % 2 ? hairLit : hair),
