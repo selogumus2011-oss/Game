@@ -1,4 +1,4 @@
-# Nexus Island Royale: Cursed — 呪術戦
+# Nexus Island Royale: Cursed
 
 A browser combat game built around cursed energy: reinforcement, reversal,
 sure-hit barriers, and the one-in-a-thousand strike that distorts space.
@@ -72,7 +72,7 @@ mapped to the same actions).
 
 ## The mechanics
 
-### Cursed energy — 呪力
+### Cursed energy
 
 Everything costs it, and it is also your armour. **Reinforcement** passively
 soaks up to 72% of incoming damage, scaling with how full your pool is and how
@@ -85,7 +85,7 @@ Some damage ignores it entirely: soul strikes, the Split Soul Katana, Cleave,
 and any domain sure-hit aimed at the soul. Against those, a full bar is worth
 nothing.
 
-### Black Flash — 黒閃
+### Black Flash
 
 Cursed energy landing within a hair's breadth of the physical impact distorts
 space and multiplies the hit by **2.5×**. Here it is a timing band on the ring
@@ -113,13 +113,13 @@ damage instead. Every hit does poise damage; at zero poise you stagger for
 almost a second and take 30% extra — which is how heavy tools like Playful Cloud
 and Dragon-Bone win fights they lose on paper.
 
-### Flow — 領域感覚
+### Flow
 
 Builds from perfect parries, Black Flashes, long combos and near-miss dodges;
 decays if you disengage. At 22% you can expand a domain. It also widens the
 Black Flash band, so playing well makes playing well easier.
 
-### Domain Expansion — 領域展開
+### Domain Expansion
 
 A barrier built from your innate technique. Inside it the technique becomes a
 **sure hit**: it does not travel, is not aimed, cannot be dodged. It simply
@@ -152,14 +152,14 @@ radius, and the slash storm cuts allies — and the caster — too.
 Holding a domain drains you and stops regeneration. Closing one locks the next
 for 14 s; having one shattered costs 22 s plus a chunk of health.
 
-### Reverse Cursed Technique — 反転術式
+### Reverse Cursed Technique
 
 Hold `R` to multiply two cursed energies into positive energy and heal. It
 drains fast, halves your movement, and below 0.45 control it can reverse the
 wrong way and hurt you. It is also the only thing that closes wounds, clears
 throat strain, cures soul wounds and burns off cursed energy burnout.
 
-### Binding Vows — 束縛
+### Binding Vows
 
 Give up something certain, get power back. Ten pre-match vows costing vow
 points, and five impromptu vows you can swear mid-fight with `V` at an immediate
@@ -183,29 +183,29 @@ abilities and (mostly) a domain:
 
 | Technique | Passive | Domain |
 | --- | --- | --- |
-| Limitless 無下限呪術 | Infinity — attacks decelerate forever while you can pay | Unlimited Void |
-| Ten Shadows 十種影法術 | Shadow reservoir, persistent shikigami | Chimera Shadow Garden (incomplete) |
-| Shrine 御廚子 | Malevolent presence — enemies lose poise near you | Malevolent Shrine (open barrier) |
-| Idle Transfiguration 無為転変 | Soul perception — bypasses reinforcement | Self-Embodiment of Perfection |
-| Disaster Flames 灰燼爆 | Volcanic body — fire immune, burns melee range | Coffin of the Iron Mountain |
-| Blood Manipulation 赤血操術 | Costs health; output rises as health falls | Flowing Red Sea |
-| Heavenly Restriction 天与呪縛 | Zero cursed energy, inhuman body, invisible to sense | — |
-| Cursed Speech 呪言 | Throat strain; at maximum you are silenced | Cradle of Quiet Words |
-| Ratio Technique 十劃呪法 | Cheapest costs in the game; Overtime at 90 s | — |
-| Boogie Woogie ブギウギ | Rhythm stacks from swapping | — |
-| Straw Doll 芻霊呪法 | Every hit plants a Resonance fragment | — |
-| Projection Sorcery 投射呪法 | 24 frames — mistimed targets freeze for a second | — |
-| Cursed Spirit Manipulation 呪霊操術 | Absorbs every curse you kill | Chamber of Unknown Depths |
-| Deadly Sentencing 誅伏賜死 | Evidence — stronger every time you are hit | Deadly Sentencing (confiscates techniques) |
-| Divergent Fist 逕庭拳 | Every hit lands a second, delayed impact | — |
-| Copy 模倣 | Learns any technique that hits you | Authentic Mutual Love |
-| Ice Formation 氷凝呪法 | Frost aura slows and softens everything nearby | Frozen Sanctuary |
-| Idle Death Gamble 坐殺博徒 | Damage fills the reels; jackpot = unlimited reversal | Idle Death Gamble |
-| Star Rage 星の怒り | Virtual mass stacks through a combo | — |
-| Electric Discharge 雷 | Every hit arcs to a second target | — |
-| Disaster Tides 溢れる水 | A water wall halves incoming projectiles | Horizon of the Captivating Skandha |
-| Construction 構築術式 | Self-rebuilding steel plating | — |
-| Puppet Manipulation 傀儡操術 | Inverted Heavenly Restriction: huge reserve, fragile body | — |
+| Limitless | Infinity — attacks decelerate forever while you can pay | Unlimited Void |
+| Ten Shadows | Shadow reservoir, persistent shikigami | Chimera Shadow Garden (incomplete) |
+| Shrine | Malevolent presence — enemies lose poise near you | Malevolent Shrine (open barrier) |
+| Idle Transfiguration | Soul perception — bypasses reinforcement | Self-Embodiment of Perfection |
+| Disaster Flames | Volcanic body — fire immune, burns melee range | Coffin of the Iron Mountain |
+| Blood Manipulation | Costs health; output rises as health falls | Flowing Red Sea |
+| Heavenly Restriction | Zero cursed energy, inhuman body, invisible to sense | — |
+| Cursed Speech | Throat strain; at maximum you are silenced | Cradle of Quiet Words |
+| Ratio Technique | Cheapest costs in the game; Overtime at 90 s | — |
+| Boogie Woogie | Rhythm stacks from swapping | — |
+| Straw Doll | Every hit plants a Resonance fragment | — |
+| Projection Sorcery | 24 frames — mistimed targets freeze for a second | — |
+| Cursed Spirit Manipulation | Absorbs every curse you kill | Chamber of Unknown Depths |
+| Deadly Sentencing | Evidence — stronger every time you are hit | Deadly Sentencing (confiscates techniques) |
+| Divergent Fist | Every hit lands a second, delayed impact | — |
+| Copy | Learns any technique that hits you | Authentic Mutual Love |
+| Ice Formation | Frost aura slows and softens everything nearby | Frozen Sanctuary |
+| Idle Death Gamble | Damage fills the reels; jackpot = unlimited reversal | Idle Death Gamble |
+| Star Rage | Virtual mass stacks through a combo | — |
+| Electric Discharge | Every hit arcs to a second target | — |
+| Disaster Tides | A water wall halves incoming projectiles | Horizon of the Captivating Skandha |
+| Construction | Self-rebuilding steel plating | — |
+| Puppet Manipulation | Inverted Heavenly Restriction: huge reserve, fragile body | — |
 
 **23 playable sorcerers**, each a different body around those techniques, with
 their own stat spread, silhouette and starting tool.
@@ -273,7 +273,7 @@ plays here, over the live simulation:
    of the world.
 2. **Chant** — a slow creep around and up while the incantation types itself in
    under the caster's name.
-3. **Call** — 領域展開 rides in from the left, the domain's own name stamps in
+3. **Call** — DOMAIN EXPANSION rides in from the left, the domain's own name stamps in
    from the right a beat later, the camera punches, everything whites out.
 4. **Close** — the camera rockets back and up over the barrier as it unfolds,
    the bars slide out, and the rig gets the camera back over the last third
@@ -354,7 +354,7 @@ and the same HUD.
 The look leans on the source material's own grammar rather than generic game
 feedback:
 
-- **The veil (帳)** falls over the arena before every fight.
+- **The veil** falls over the arena before every fight.
 - **Opening name cards** introduce a duel, with both techniques named in kana.
 - **Domain Expansion cut-ins** — diagonal panels wipe in, the technique lands in
   calligraphy, and the caster's chant sits underneath it. Every domain has one.
@@ -375,7 +375,7 @@ feedback:
   white gashes across the whole view. Black Flash, guard breaks, perfect
   parries, ultimates coming out and domain openings all have their own.
 - **Black Flash** inverts the screen, throws black lightning, scorches the
-  ground and stamps 黒閃 over the impact.
+  ground and stamps BLACK FLASH over the impact.
 
 Animation is a pose system rather than a single swing value. Each attack is
 driven by the body mechanic it actually uses — jab, cross, spin, rising kick,

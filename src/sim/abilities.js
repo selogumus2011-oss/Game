@@ -199,7 +199,7 @@ function castCommand(ctx) {
   world.fx(ability.vfx || 'word', {
     pos: ctx.origin, z: self.z + 1.4, angle: aim,
     range: ability.range || 10, arc: ability.halfArc || 0.6,
-    color: self.technique?.color, text: ability.jp || ability.name,
+    color: self.technique?.color, text: ability.name,
   });
   world.shake(5, 0.22);
   return true;

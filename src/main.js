@@ -153,8 +153,8 @@ class Game {
         const me = CHARACTERS[sel.character];
         const them = CHARACTERS[foe];
         this.hud.showVersus(
-          { name: me.name, title: me.title, technique: TECHNIQUES[me.technique].jp, color: me.appearance.accent },
-          { name: them.name, title: them.title, technique: TECHNIQUES[them.technique].jp, color: them.appearance.accent },
+          { name: me.name, title: me.title, technique: TECHNIQUES[me.technique].name, color: me.appearance.accent },
+          { name: them.name, title: them.title, technique: TECHNIQUES[them.technique].name, color: them.appearance.accent },
         );
         break;
       }
@@ -178,7 +178,7 @@ class Game {
           const r = Math.sqrt(Math.random()) * (world.arenaRadius - 6);
           world.spawnPickup(tool, { x: Math.cos(a) * r, y: Math.sin(a) * r });
         }
-        world.banner(null, 'Culling Game — 8 players', '#cfa8ff', 3);
+        world.banner('Culling Game — 8 players', '#cfa8ff', 3);
         break;
       }
       case 'training': {
@@ -190,11 +190,11 @@ class Game {
         world.controllers.delete(dummy.id);
         const partner = world.spawnSorcerer('sevenThree', { team: 1, x: 6, y: -8 });
         partner.name = 'Sparring Partner';
-        world.banner(null, 'Training — learn the Black Flash band', '#8ad8ff', 3);
+        world.banner('Training — learn the Black Flash band', '#8ad8ff', 3);
         break;
       }
       default: {
-        world.banner(null, 'Exorcism — survive every wave', '#8ad8ff', 2.6);
+        world.banner('Exorcism — survive every wave', '#8ad8ff', 2.6);
         break;
       }
     }
@@ -367,7 +367,7 @@ class Game {
       if (!vow) return;
       vow.apply(p, world);
       world.audio('vow', { volume: 1 });
-      world.banner(null, vow.name, '#ffd166', 2.2);
+      world.banner(vow.name, '#ffd166', 2.2);
       world.fx('buffAura', { pos: { x: p.pos.x, y: p.pos.y }, color: '#ffd166' });
       p.vows.push(vow);
     });
@@ -415,12 +415,12 @@ class Game {
         }
       } else if (ev.type === 'abilityStart') {
         // Name the technique as it comes out, the way the show does.
-        if (ev.jp) {
+        if (ev.label) {
           this.effects.sprite({
             x: ev.pos.x, y: ev.pos.y, z: ev.z,
-            text: ev.jp, color: ev.color,
-            size: ev.ultimate ? 30 : 22, life: ev.ultimate ? 1.1 : 0.8,
-            style: ev.ultimate ? 'flash' : 'kanji',
+            text: ev.label.toUpperCase(), color: ev.color,
+            size: ev.ultimate ? 24 : 17, life: ev.ultimate ? 1.1 : 0.8,
+            style: ev.ultimate ? 'flash' : 'callout',
           });
         }
         if (ev.ultimate) {
@@ -439,7 +439,7 @@ class Game {
           // only the fallback for when cutscenes are switched off.
           if (!this.cinematic.start(caster, spec, w)) {
             this.hud.showDomainCutin({
-              jp: spec.jp, en: spec.name, chant: spec.chant,
+              en: spec.name, chant: spec.chant,
               color: spec.color, name: caster.name,
             });
           }

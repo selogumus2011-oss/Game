@@ -1,4 +1,4 @@
-// Binding Vows — 束縛.
+// Binding Vows.
 //
 // A vow is a contract with yourself. You give up something concrete and
 // certain, and in exchange cursed energy gives you something back. Break the
@@ -9,7 +9,7 @@
 
 export const VOWS = {
   revelation: {
-    id: 'revelation', name: 'Revelation', jp: '開示',
+    id: 'revelation', name: 'Revelation',
     cost: 1,
     terms: 'Reveal your cursed technique to your opponent before the fight.',
     gain: '+25% cursed technique output, +15% maximum cursed energy.',
@@ -17,7 +17,7 @@ export const VOWS = {
     apply(f) { f.vowMods.techniqueOutput += 0.25; f.vowMods.maxCe += 0.15; f.flags.revealed = true; },
   },
   abstinence: {
-    id: 'abstinence', name: 'Abstinence', jp: '禁欲',
+    id: 'abstinence', name: 'Abstinence',
     cost: 2,
     terms: 'You may not use Reverse Cursed Technique for the entire match.',
     gain: '+35% maximum cursed energy, +60% cursed energy regeneration.',
@@ -26,7 +26,7 @@ export const VOWS = {
     apply(f) { f.vowMods.maxCe += 0.35; f.vowMods.ceRegen += 0.6; f.flags.noRct = true; },
   },
   noDomain: {
-    id: 'noDomain', name: 'Restraint of the Sure-Hit', jp: '領域封印',
+    id: 'noDomain', name: 'Restraint of the Sure-Hit',
     cost: 2,
     terms: 'You may not expand a domain.',
     gain: '+45% cursed technique damage, +20% cursed energy regeneration.',
@@ -35,7 +35,7 @@ export const VOWS = {
     apply(f) { f.vowMods.techniqueOutput += 0.45; f.vowMods.ceRegen += 0.2; f.flags.noDomain = true; },
   },
   bareHands: {
-    id: 'bareHands', name: 'Empty Hands', jp: '徒手',
+    id: 'bareHands', name: 'Empty Hands',
     cost: 1,
     terms: 'You may not carry a cursed tool.',
     gain: '+30% physical damage, Black Flash window widened by 45%.',
@@ -44,7 +44,7 @@ export const VOWS = {
     apply(f) { f.vowMods.physicalOutput += 0.3; f.vowMods.flashBand += 0.45; f.flags.noTool = true; },
   },
   timeLimit: {
-    id: 'timeLimit', name: 'The Hour', jp: '刻限',
+    id: 'timeLimit', name: 'The Hour',
     cost: 3,
     terms: 'Win within 120 seconds.',
     gain: '+55% to every output stat and +40% movement speed.',
@@ -58,7 +58,7 @@ export const VOWS = {
     },
   },
   handicap: {
-    id: 'handicap', name: 'Wounded Start', jp: '手負い',
+    id: 'handicap', name: 'Wounded Start',
     cost: 2,
     terms: 'Begin the match at 45% health.',
     gain: '+30% all damage, +25% reinforcement, Black Flash chains never decay.',
@@ -71,28 +71,28 @@ export const VOWS = {
     },
   },
   silence: {
-    id: 'silence', name: 'Unspoken', jp: '無言',
+    id: 'silence', name: 'Unspoken',
     cost: 1,
     terms: 'You may not announce your domain (no cast-time invulnerability window).',
     gain: 'Domain cast time reduced by 45% and the barrier gains 30% integrity.',
     apply(f) { f.vowMods.domainCast -= 0.45; f.vowMods.domainIntegrity += 0.3; f.flags.silentDomain = true; },
   },
   singleShot: {
-    id: 'singleShot', name: 'One Blade Only', jp: '一刀',
+    id: 'singleShot', name: 'One Blade Only',
     cost: 2,
     terms: 'Cursed technique abilities III and IV are locked.',
     gain: 'Abilities I and II cost 50% less and deal +60% damage.',
     apply(f) { f.vowMods.lockAbilities = [2, 3]; f.vowMods.cheapBasics = true; },
   },
   noHealing: {
-    id: 'noHealing', name: 'No Quarter', jp: '不撓',
+    id: 'noHealing', name: 'No Quarter',
     cost: 1,
     terms: 'You cannot be healed by any source except Reverse Cursed Technique.',
     gain: '+20% maximum health and +35% poise.',
     apply(f) { f.vowMods.maxHp += 0.2; f.vowMods.poise += 0.35; f.flags.onlyRctHeal = true; },
   },
   throwAwayGuard: {
-    id: 'throwAwayGuard', name: 'No Guard', jp: '無防備',
+    id: 'throwAwayGuard', name: 'No Guard',
     cost: 2,
     terms: 'You cannot block. Parry still works.',
     gain: '+40% attack speed, +30% dash distance, perfect parries refund double cursed energy.',
@@ -115,7 +115,7 @@ export const MAX_VOW_POINTS = 4;
 
 export const IMPROMPTU_VOWS = [
   {
-    id: 'bloodPrice', name: 'Blood for Power', jp: '血の代償',
+    id: 'bloodPrice', name: 'Blood for Power',
     terms: 'Pay 22% of your current health, right now.',
     gain: 'Cursed energy refilled completely and output raised 30% for 20 seconds.',
     available: (f) => f.hp > f.maxHp * 0.3,
@@ -126,7 +126,7 @@ export const IMPROMPTU_VOWS = [
     },
   },
   {
-    id: 'sealTechnique', name: 'Seal the Technique', jp: '術式封印',
+    id: 'sealTechnique', name: 'Seal the Technique',
     terms: 'Lock your cursed technique for 25 seconds.',
     gain: 'Physical damage +80%, attack speed +35%, Black Flash window doubled.',
     available: (f) => !f.hasStatus('techniqueSealed'),
@@ -136,7 +136,7 @@ export const IMPROMPTU_VOWS = [
     },
   },
   {
-    id: 'stakeEverything', name: 'All or Nothing', jp: '一か八か',
+    id: 'stakeEverything', name: 'All or Nothing',
     terms: 'Your maximum health drops to 1 for 12 seconds. One hit ends you.',
     gain: 'Triple damage, immunity to stagger, all cooldowns cleared.',
     available: (f) => f.hp / f.maxHp > 0.15,
@@ -147,7 +147,7 @@ export const IMPROMPTU_VOWS = [
     },
   },
   {
-    id: 'confess', name: 'Confession', jp: '自白',
+    id: 'confess', name: 'Confession',
     terms: 'Your health is capped at its current value for the rest of the match.',
     gain: 'Flow gauge filled and Domain Expansion cost halved permanently.',
     available: (f) => !f.flags.confessed,
@@ -159,7 +159,7 @@ export const IMPROMPTU_VOWS = [
     },
   },
   {
-    id: 'restrainMovement', name: 'Rooted Stance', jp: '不動',
+    id: 'restrainMovement', name: 'Rooted Stance',
     terms: 'Movement speed halved for 18 seconds.',
     gain: 'Reinforcement +60%, poise doubled, cursed energy regeneration tripled.',
     available: () => true,

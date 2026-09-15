@@ -17,7 +17,7 @@ import {
 } from './combat.js';
 
 export const GRAVITY = 24;
-export const SIMPLE_DOMAIN_RADIUS = 2.21; // 二尺二寸一分 — the canonical radius
+export const SIMPLE_DOMAIN_RADIUS = 2.21; // two shaku two sun one bu, the canonical radius
 
 /**
  * How much Flow a domain costs to open. A domain is the centrepiece of the
@@ -919,7 +919,7 @@ export class Fighter {
     world.fx('castCharge', { pos: this.pos, z: this.z, owner: this.id, color: this.technique.color, time: ab.castTime });
     world.event({
       type: 'abilityStart', fighter: this.id, ability: ab.id,
-      jp: ab.jp || '', label: ab.name, ultimate: !!ab.ultimate,
+      label: ab.name, ultimate: !!ab.ultimate,
       color: this.technique?.color || this.color,
       pos: { x: this.pos.x, y: this.pos.y }, z: this.z + this.height + 0.4,
     });

@@ -609,7 +609,7 @@ export class Hud {
       ctx.fillStyle = b.color;
       ctx.shadowColor = b.color;
       ctx.shadowBlur = 26;
-      ctx.fillText((b.en || b.jp || '').toUpperCase(), W / 2, yy);
+      ctx.fillText((b.text || '').toUpperCase(), W / 2, yy);
       ctx.shadowBlur = 0;
       ctx.font = `700 16px ${FONT}`;
       ctx.fillStyle = 'rgba(255,255,255,0.85)';

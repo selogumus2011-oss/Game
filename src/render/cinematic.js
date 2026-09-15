@@ -10,7 +10,7 @@
 //
 //   SEAL    the shot cuts to a low angle on the caster, colour drains
 //   CHANT   a slow orbit while the incantation types itself in
-//   CALL    領域展開 slams, the name stamps under it, everything whites out
+//   CALL    DOMAIN EXPANSION slams, the name stamps under it, everything whites out
 //   CLOSE   the camera rockets back and up as the barrier unfolds
 //
 // The whole thing aborts instantly if the chant is interrupted, because a
@@ -186,14 +186,14 @@ export class DomainCinematic {
       ctx.globalAlpha = 1;
     }
 
-    // --- 領域展開, then the name --------------------------------------------
+    // --- The call, then the name -------------------------------------------
     if (t > CHANT) {
       const k = clamp01((t - CHANT) / 0.2);
       const out = clamp01((CLOSE - 0.25 - t) / 0.3);
       const a = Math.min(k, out);
       if (a > 0) {
         ctx.globalAlpha = a;
-        // 領域展開 rides in from the left on a slight skew.
+        // DOMAIN EXPANSION rides in from the left on a slight skew.
         const slide = (1 - k) * -W * 0.5;
         const big = Math.round(Math.min(52, W * 0.038));
         ctx.save();

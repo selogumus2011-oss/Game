@@ -1,4 +1,4 @@
-// Domain Expansion — 領域展開.
+// Domain Expansion.
 //
 // A domain is a barrier built from the caster's innate technique. Inside it the
 // technique becomes a *sure hit*: it does not need to travel, be aimed, or be
@@ -290,7 +290,7 @@ export class Domain {
     if (!this.clashAnnounced) {
       this.clashAnnounced = true;
       world.audio('domainClash', { volume: 1 });
-      world.banner(null, 'Domain Clash', '#ffffff', 2);
+      world.banner('Domain Clash', '#ffffff', 2);
       world.notify('DOMAIN CLASH — hold X to push', '#ffd166');
     }
   }
@@ -323,7 +323,7 @@ export class Domain {
       pos: { x: this.center.x, y: this.center.y }, radius: this.radius,
       color: this.spec.color, color2: this.spec.color2, visual: this.spec.visual,
     });
-    world.banner(null, `${this.spec.name} shattered`, '#ff4d4d', 1.6);
+    world.banner(`${this.spec.name} shattered`, '#ff4d4d', 1.6);
     // Backlash: losing your own domain hurts.
     if (this.owner && !this.owner.dead) {
       this.owner.takeTrueDamage(this.owner.maxHp * 0.08, 'domain backlash');

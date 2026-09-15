@@ -173,7 +173,7 @@ export class World {
     const c = getCurse(curseId);
     const d = this.difficulty;
     return this.addFighter({
-      name: c.name, jp: c.jp, team, ai: c.ai, kind: 'curse', grade: c.grade,
+      name: c.name, team, ai: c.ai, kind: 'curse', grade: c.grade,
       technique: c.technique, tool: 'fists', shape: c.shape, scale: c.scale,
       color: c.color, color2: c.color2, eyeColor: c.eyeColor,
       actions: c.actions, radius: c.radius, x, y, life,
@@ -476,7 +476,7 @@ export class World {
           return;
         }
         const entry = WAVE_TABLE[this.wave - 1];
-        this.banner(null, entry.boss ? 'Special Grade' : `Wave ${this.wave}`, entry.boss ? '#ff4d4d' : '#8ad8ff', 2.2);
+        this.banner(entry.boss ? 'Special Grade' : `Wave ${this.wave}`, entry.boss ? '#ff4d4d' : '#8ad8ff', 2.2);
         for (const [id, count] of entry.spawns) {
           for (let i = 0; i < count; i++) {
             const ang = this.rng.angle();
@@ -526,7 +526,7 @@ export class World {
       } : null,
     };
     this.event({ type: 'matchEnd', victory });
-    this.banner(null, victory ? 'Exorcism Complete' : 'Defeat', victory ? '#8ef0bd' : '#ff4d4d', 4);
+    this.banner(victory ? 'Exorcism Complete' : 'Defeat', victory ? '#8ef0bd' : '#ff4d4d', 4);
   }
 
   // -------------------------------------------------------------------------
@@ -797,7 +797,7 @@ export class World {
   breakVow(f, kind) {
     const vow = f.vows.find((v) => v.breakOn === kind);
     this.audio('domainBreak', { volume: 0.9 });
-    this.banner(null, 'Binding Vow Broken', '#ff2d2d', 2.4);
+    this.banner('Binding Vow Broken', '#ff2d2d', 2.4);
     if (kind === 'timeout') {
       f.takeTrueDamage(f.maxHp * 10, 'a broken binding vow');
       return;
@@ -842,7 +842,7 @@ export class World {
     this.slowmoTime = Math.max(this.slowmoTime, time);
     if (this.slowmoTime <= 0) this.slowmoScale = 1;
   }
-  banner(_jp, en, color, time = 2) { this.banners.push({ en, color, t: time, max: time }); }
+  banner(text, color, time = 2) { this.banners.push({ text, color, t: time, max: time }); }
   notify(text, color = '#ffffff') {
     const last = this.notifications[this.notifications.length - 1];
     if (last && last.text === text && last.t > 1.2) return;

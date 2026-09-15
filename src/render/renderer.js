@@ -1458,7 +1458,7 @@ export class Renderer {
 
   // -------------------------------------------------------------------------
 
-  /** The veil (帳) dropping over the arena at the start of a fight. */
+  /** The veil dropping over the arena at the start of a fight. */
   drawVeilIntro(ctx, W, H, dt) {
     if (!(this.veilIntro > 0)) return;
     this.veilIntro -= dt;
@@ -1486,7 +1486,7 @@ export class Renderer {
     ctx.fillStyle = hexA('#8a3ad0', 0.25 * (1 - lift));
     ctx.fillRect(0, top + H - 26, W, 26);
     ctx.globalCompositeOperation = 'source-over';
-    // 帳.
+    // The veil mark.
     if (fall > 0.5) {
       ctx.globalAlpha = clamp01((fall - 0.5) * 3) * (1 - lift);
       ctx.textAlign = 'center';
