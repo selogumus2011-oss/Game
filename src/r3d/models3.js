@@ -143,7 +143,7 @@ function paintTone(hex, target) {
   // vivid scarlet. A painter mixing lighter adds white, which greys the mix,
   // and the further they have to go the greyer it gets. So the pull toward
   // neutral scales with how far the lift had to reach.
-  const grey = Math.min(0.45, Math.max(0, (k - 1) * 0.12));
+  const grey = Math.min(0.26, Math.max(0, (k - 1) * 0.075));
   const mix = (v) => {
     const up = v * k;
     return Math.min(255, Math.round(up + (target - up) * grey));
@@ -215,16 +215,46 @@ function headMesh(a, opts = {}) {
         matCompose(0.079, 0, 0.055, 0, 0, 0));
     }
 
-    // Eyes: flat plates set just proud of the face so they never z-fight.
+    // Eyes.
+    //
+    // A drawn face lives or dies on these, and they were two small pale
+    // rectangles with a dot in them. An animated eye is built in layers, and
+    // every layer is doing a job:
+    //
+    //   * The **lash line** along the top is the heaviest mark on the whole
+    //     face — thicker than the outline of the head — and it is what makes
+    //     an eye read as an eye rather than as a window.
+    //   * The **iris** is tall, filling most of the opening rather than
+    //     floating in the middle of it.
+    //   * The **pupil** sits inside that.
+    //   * The **highlight** is a single small bright square, off-centre. It is
+    //     the cheapest mark in animation and the one that makes a face look
+    //     alive instead of dead.
+    //
+    // Layered outward along +x in small steps so nothing z-fights.
     if (!a.blindfold && !opts.curse) {
+      const lash = shade(hair, 0.55);
       for (const s of [1, -1]) {
-        b.merge(box(0.012, 0.055, 0.03, '#f6f6fa', { z0: -0.015 }),
-          matCompose(0.082, s * 0.046, 0.108, 0, 0, 0));
-        b.merge(box(0.014, 0.026, 0.026, eyes, { z0: -0.013 }),
-          matCompose(0.086, s * 0.046, 0.108, 0, 0, 0));
-        // Brow.
-        b.merge(box(0.012, 0.06, 0.012, hairDark, { z0: -0.006 }),
-          matCompose(0.084, s * 0.046, 0.136, 0, -0.22 * s, 0));
+        const ey = s * 0.047;
+        // Sclera: wider and much taller than before.
+        b.merge(box(0.012, 0.064, 0.044, '#f7f6f8', { z0: -0.022 }),
+          matCompose(0.0815, ey, 0.112, 0, 0, 0));
+        // Iris, tall.
+        b.merge(box(0.013, 0.034, 0.036, eyes, { z0: -0.018 }),
+          matCompose(0.0845, ey, 0.112, 0, 0, 0));
+        // Pupil.
+        b.merge(box(0.014, 0.016, 0.019, shade(eyes, 0.34), { z0: -0.0095 }),
+          matCompose(0.0862, ey, 0.112, 0, 0, 0));
+        // Highlight, up and inboard — the same corner on both eyes, because a
+        // highlight comes from a light and lights do not mirror.
+        b.merge(box(0.015, 0.011, 0.012, '#ffffff', { z0: -0.006 }),
+          matCompose(0.0872, ey - 0.011, 0.126, 0, 0, 0));
+        // Lash line across the top, heaviest mark on the face.
+        b.merge(box(0.016, 0.07, 0.013, lash, { z0: -0.0065 }),
+          matCompose(0.0855, ey, 0.133, 0, 0, 0));
+        // Brow above it.
+        b.merge(box(0.012, 0.058, 0.011, hairDark, { z0: -0.0055 }),
+          matCompose(0.0835, ey, 0.152, 0, -0.22 * s, 0));
       }
     } else if (a.blindfold) {
       // The blindfold wraps the whole upper face and knots at the back.
