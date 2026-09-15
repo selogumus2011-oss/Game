@@ -15,6 +15,7 @@ import { addStatus, removeStatus, getStatus, hasStatus, updateStatuses } from '.
 import {
   dealDamage, targetsInArc, openFlashWindow, closeFlashWindow, stagger, reinforcement, FLASH,
 } from './combat.js';
+import { assistedAim, hitGenerosity } from './assist.js';
 
 export const GRAVITY = 24;
 export const SIMPLE_DOMAIN_RADIUS = 2.21; // two shaku two sun one bu, the canonical radius
@@ -111,6 +112,9 @@ export class Fighter {
     this.vz = 0;
     this.facing = spec.facing ?? 0;
     this.aim = this.facing;
+    // 0 for everything the AI drives; the world raises it for the player only,
+    // from the settings slider. Assist that cuts both ways is not assist.
+    this.aimAssist = 0;
     this.radius = spec.radius ?? 0.45;
     this.height = 1.75 * (this.appearance.height ?? 1) * this.scale;
     this.airborne = false;
@@ -324,6 +328,13 @@ export class Fighter {
     };
     this.anim.swing = 0;
     if (!chain) this.combo.timer = Math.max(this.combo.timer, 1.4);
+    // Commit-time aim assist: the swing goes where you were pointing, nudged
+    // the last few degrees onto whatever you were plainly pointing at. It has
+    // to happen before the step, so a lunge travels down the corrected line
+    // rather than sliding past the target it just locked.
+    if (this.world && this.aimAssist > 0) {
+      this.aim = assistedAim(this.world, this, this.aim, def.range || 2, this.aimAssist);
+    }
     if (def.step) {
       const d = vfromAngle(this.aim);
       this.vel.x = d.x * def.step;
@@ -774,8 +785,10 @@ export class Fighter {
 
   performSwing(world, def, a, sweepOnly = false) {
     const origin = vadd(this.pos, vfromAngle(this.facing, def.offset || 0));
+    const slack = hitGenerosity(this, this.aimAssist);
     const targets = targetsInArc(world, this, {
-      origin, angle: this.facing, range: def.range, halfArc: def.arc,
+      origin, angle: this.facing,
+      range: def.range + slack.range, halfArc: def.arc + slack.arc,
       heightRange: def.spike ? 4 : 3,
     });
     let connected = false;
@@ -912,6 +925,11 @@ export class Fighter {
 
     this.state = 'cast';
     this.stateTime = 0;
+    // Same nudge as a swing, sized to the ability's own reach so a long beam
+    // gets no more help finding a distant target than a short one does.
+    if (this.aimAssist > 0) {
+      this.aim = assistedAim(world, this, this.aim, ab.range || 10, this.aimAssist);
+    }
     this.cast = { ability: ab, index, t: 0, fired: false, aim: this.aim };
     this.facing = this.aim;
     this.anim.cast = 0;

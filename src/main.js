@@ -90,6 +90,11 @@ class Game {
     audio.sfxVolume = s.sfxVolume;
     if (audio.sfxGain) audio.sfxGain.gain.value = s.sfxVolume;
     this.effects.quality = s.particles;
+    this.aimAssist = s.aimAssist ?? 0.7;
+    if (this.world) {
+      this.world.aimAssist = this.aimAssist;
+      if (this.world.player) this.world.player.aimAssist = this.aimAssist;
+    }
     this.cinematic.enabled = s.cutscenes !== false;
     this.setRenderMode(s.render3d !== false);
     for (const r of [this.renderer2d, this.renderer3d]) {
@@ -140,6 +145,7 @@ class Game {
       seed: (Math.random() * 0xffffffff) >>> 0,
     });
     this.world = world;
+    world.aimAssist = this.aimAssist ?? 0.7;
 
     const p = world.spawnPlayer(sel.character, { vows: sel.vows, tool: sel.tool, x: 0, y: 0, team: 0 });
     p.facing = -Math.PI / 2;
@@ -182,12 +188,20 @@ class Game {
         break;
       }
       case 'training': {
-        const dummy = world.spawnCurse('hulkCurse', { x: 0, y: -6, team: 1 });
-        dummy.name = 'Training Dummy';
-        dummy.stats.maxHp = 99999;
-        dummy.maxHp = dummy.hp = 99999;
-        dummy.stats.poise = 250;
-        world.controllers.delete(dummy.id);
+        // Three dummies at different ranges, so you can practise a swing, a
+        // mid-range technique and a long beam without walking between reps.
+        // They are deliberately fat: a training dummy you can miss is a
+        // training dummy that teaches you nothing.
+        const spots = [{ x: 0, y: -6 }, { x: -7, y: -11 }, { x: 8, y: -14 }];
+        for (const [i, spot] of spots.entries()) {
+          const dummy = world.spawnCurse('hulkCurse', { x: spot.x, y: spot.y, team: 1 });
+          dummy.name = i === 0 ? 'Training Dummy' : `Training Dummy ${i + 1}`;
+          dummy.stats.maxHp = 99999;
+          dummy.maxHp = dummy.hp = 99999;
+          dummy.stats.poise = 250;
+          dummy.radius = Math.max(dummy.radius, 1.15);
+          world.controllers.delete(dummy.id);
+        }
         const partner = world.spawnSorcerer('sevenThree', { team: 1, x: 6, y: -8 });
         partner.name = 'Sparring Partner';
         world.banner('Training — learn the Black Flash band', '#8ad8ff', 3);

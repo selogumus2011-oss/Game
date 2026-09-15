@@ -47,7 +47,7 @@ export class UI {
     };
     this.settings = {
       masterVolume: 0.7, sfxVolume: 0.9, musicVolume: 0.3,
-      particles: 1, grain: true, shake: 1, assist: 0, showNames: true,
+      particles: 1, grain: true, shake: 1, assist: 0, aimAssist: 0.7, showNames: true,
       render3d: true, cutscenes: true,
     };
   }
@@ -432,6 +432,7 @@ export class UI {
         ${slider('sfxVolume', 'Effects volume', 0, 1, 0.05)}
         ${slider('particles', 'Particle density', 0.3, 1.4, 0.1)}
         ${slider('shake', 'Screen shake', 0, 1.5, 0.1)}
+        ${slider('aimAssist', 'Aim assist', 0, 1, 0.1)}
         ${slider('assist', 'Black Flash window assist', 0, 1, 0.1)}
         ${toggle('render3d', '3D renderer')}
         ${toggle('cutscenes', 'Domain expansion cutscenes')}
@@ -439,6 +440,9 @@ export class UI {
         ${toggle('showNames', 'Enemy name plates')}
         <p class="section-note">Turning the 3D renderer off falls back to the classic 2.5D
         presentation. Same simulation, same frame data — only the drawing changes.</p>
+        <p class="section-note">Aim assist nudges a swing or a cast the last few degrees
+        onto a target you were already pointing at, and widens your reach a little. It will
+        never pick a target you were not aiming near.</p>
         <p class="section-note">Black Flash assist widens the timing band. At 0 the band is
         ${Math.round(FLASH.bandBase * 1000)}ms wide before your cursed energy control and Flow are applied.</p>
       </div>

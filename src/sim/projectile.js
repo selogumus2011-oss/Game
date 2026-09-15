@@ -16,6 +16,8 @@ export class Projectile {
     this.ownerId = owner ? owner.id : null;
     this.owner = owner;
     this.team = spec.team ?? (owner ? owner.team : 0);
+    // Captured at spawn: only a shot the player fired collides generously.
+    this.ownerAssist = owner?.aimAssist ?? 0;
 
     this.pos = vec(spec.pos?.x ?? (owner ? owner.pos.x : 0), spec.pos?.y ?? (owner ? owner.pos.y : 0));
     const angle = spec.angle ?? (owner ? owner.facing : 0);
@@ -108,6 +110,8 @@ export class Projectile {
       }
     }
 
+    const prevX = this.pos.x;
+    const prevY = this.pos.y;
     this.pos.x += this.vel.x * dt;
     this.pos.y += this.vel.y * dt;
     this.angle = vangle(this.vel);
@@ -145,13 +149,19 @@ export class Projectile {
     }
 
     // Fighter collisions.
+    //
+    // Tested against the segment travelled this frame rather than the point we
+    // ended on. A 40 m/s beam covers two thirds of a metre per frame, which is
+    // wider than a person: a point test lets it pass clean through someone and
+    // read to the player as the game dropping the hit.
+    const slack = this.ownerAssist * 0.5;
     for (const f of world.fighters) {
       if (f.dead || this.hitSet.has(f.id)) continue;
       if (f.team === this.team && !f.decoy) continue;
       if (this.owner === f) continue;
-      const d = vdist(f.pos, this.pos);
-      if (d > this.radius + f.radius) continue;
-      if (Math.abs((f.z + f.height * 0.5) - this.z) > 2.2 + this.radius) continue;
+      const reach = this.radius + f.radius + slack;
+      if (segDist(prevX, prevY, this.pos.x, this.pos.y, f.pos.x, f.pos.y) > reach) continue;
+      if (Math.abs((f.z + f.height * 0.5) - this.z) > 2.2 + this.radius + slack) continue;
       this.hitSet.add(f.id);
       this.hitFighter(f, world);
       if (this.dead) return;
@@ -214,4 +224,15 @@ export class Projectile {
     }
     if (this.onExpire) this.onExpire({ world, projectile: this });
   }
+}
+
+/** Closest distance from point (px,py) to the segment (ax,ay)-(bx,by). */
+function segDist(ax, ay, bx, by, px, py) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-9) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
 }

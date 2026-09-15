@@ -60,6 +60,9 @@ export class World {
     this.shakeAmount = 0;
     this.shakeTime = 0;
     this.player = null;
+    // How much the player's aim is helped, 0..1. The world owns it rather than
+    // the fighter so a mid-fight settings change takes effect immediately.
+    this.aimAssist = 0.7;
     this.over = false;
     this.result = null;
     this.wave = 0;
@@ -116,6 +119,7 @@ export class World {
     this.fighters.push(f);
     if (spec.isPlayer) {
       this.player = f;
+      f.aimAssist = this.aimAssist;
     } else {
       const Ctor = spec.summon ? SummonController : AIController;
       this.controllers.set(f.id, new Ctor(f, spec.ai || 'brute', this.rng));

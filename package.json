@@ -6,7 +6,7 @@
   "description": "Jujutsu-style cursed energy combat game — domains, reverse cursed technique, black flash.",
   "scripts": {
     "start": "node tools/serve.mjs",
-    "test": "node tools/smoketest.mjs"
+    "test": "node tools/smoketest.mjs && node tools/assisttest.mjs"
   },
   "devDependencies": {
     "playwright": "^1.49.1"
