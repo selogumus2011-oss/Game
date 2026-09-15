@@ -13,7 +13,7 @@ import { Camera3 } from './r3d/core3.js';
 import { Renderer3D } from './r3d/scene3.js';
 import { Effects } from './render/effects.js';
 import { Hud } from './render/hud.js';
-import { DomainCinematic } from './render/cinematic.js';
+import { DomainCinematic, FlashCinematic } from './render/cinematic.js';
 import { UI } from './ui/menus.js';
 import { ROSTER, CHARACTERS } from './data/characters.js';
 import { TECHNIQUES } from './data/techniques.js';
@@ -38,6 +38,7 @@ class Game {
     this.effects = new Effects();
     this.hud = new Hud();
     this.cinematic = new DomainCinematic();
+    this.flashCine = new FlashCinematic();
     this.world = null;
     this.state = 'menu';
     this.chargeStart = -1;
@@ -100,6 +101,7 @@ class Game {
       if (this.world.player) this.world.player.aimAssist = this.aimAssist;
     }
     this.cinematic.enabled = s.cutscenes !== false;
+    this.flashCine.enabled = s.cutscenes !== false;
     this.setRenderMode(s.render3d !== false);
     if (!!s.firstPerson !== this.firstPerson) this.setFirstPerson(!!s.firstPerson);
     for (const r of [this.renderer2d, this.renderer3d]) {
@@ -295,6 +297,10 @@ class Game {
       this.drainWorld(w);
       // The cutscene claims the camera before the follow rig reads it.
       this.cinematic.update(dt, w, this.camera);
+      // A Black Flash landing inside a domain expansion still gets its impact
+      // frames; it just does not get to take the shot away from the domain.
+      if (!this.cinematic.owningCamera) this.flashCine.update(dt, w, this.camera);
+      else this.flashCine.active = null;
       this.camera.update(dt, w, w.player, this.input);
       this.updateDrones(w);
     } else if (this.state === 'menu') {
@@ -515,6 +521,26 @@ class Game {
         this.camera.punchZoom(-0.14);
       } else if (ev.type === 'parry') {
         this.camera.punchZoom(0.1);
+      } else if (ev.type === 'blackflash') {
+        const att = w.byId(ev.attacker);
+        const vic = w.byId(ev.victim);
+        // The cut is the player's moment. An enemy landing one on you gets the
+        // impact frames and the screen shake, but the camera stays where it is.
+        const mine = w.player && ev.attacker === w.player.id;
+        const at = vic
+          ? { x: vic.pos.x, y: vic.pos.y, z: vic.z + vic.height * 0.62 }
+          : { x: att?.pos.x ?? 0, y: att?.pos.y ?? 0, z: 1.2 };
+        const took = mine && att
+          && this.flashCine.start(att, vic, at, ev.chain, w);
+        if (!took) {
+          // No cut: the callout still has to land, so it goes into the world
+          // where the old one always was.
+          this.effects.sprite({
+            x: at.x, y: at.y, z: at.z + 0.9, text: 'BLACK FLASH',
+            color: '#ff2d2d', size: 64, life: 1.1, style: 'flash',
+          });
+        }
+        this.camera.punchZoom(0.26);
       }
     }
     w.events.length = 0;
@@ -575,13 +601,14 @@ class Game {
     }
     r.autoQuality(this.loop.fps);
     // The cutscene drains the colour out of the world while it plays.
-    r.drain = this.cinematic.drain;
+    r.drain = Math.max(this.cinematic.drain, this.flashCine.drain);
     this.effects.quality = (this.settings?.particles ?? 1) * r.quality;
     r.render(this.world, this.camera, this.effects, dt);
     // The HUD steps aside for a cutscene — it is a different kind of shot.
-    this.hud.cinematicHidden = !!this.cinematic.active;
+    this.hud.cinematicHidden = !!this.cinematic.active || !!this.flashCine.active;
     this.hud.draw(ctx, this.world, this.camera, r.width, r.height, dt);
     this.cinematic.draw(ctx, r.width, r.height, dt);
+    this.flashCine.draw(ctx, r.width, r.height, dt);
     if (!this.cinematic.active) this.touch.draw(ctx, this.world.player);
     if (this.state === 'paused') {
       ctx.save();

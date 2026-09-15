@@ -26,8 +26,8 @@ export class Hud {
   }
 
   /** The domain expansion announcement: split panels, calligraphy, the chant. */
-  showDomainCutin({ jp, en, chant, color, name, glyph }) {
-    this.cutin = { jp, en, chant, color, name, glyph: glyph || 'DOMAIN EXPANSION', t: 2.6, max: 2.6 };
+  showDomainCutin({ en, chant, color, name, glyph }) {
+    this.cutin = { en, chant, color, name, glyph: glyph || 'DOMAIN EXPANSION', t: 2.6, max: 2.6 };
   }
 
   showVersus(left, right) {
@@ -656,13 +656,12 @@ export class Hud {
       ctx.shadowBlur = 26;
       ctx.fillText((b.text || '').toUpperCase(), W / 2, yy);
       ctx.shadowBlur = 0;
-      ctx.font = `700 16px ${FONT}`;
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillText(b.en, W / 2, yy + 26);
-      // Underline sweep.
+      // A banner used to be two lines, a Japanese headline over its English.
+      // There is only the one line now, so the subtitle is gone and the
+      // underline moves up to sit against it.
       ctx.fillStyle = hexA(b.color, 0.7);
       const lw = 260 * clamp01(t * 3);
-      ctx.fillRect(W / 2 - lw / 2, yy + 36, lw, 2);
+      ctx.fillRect(W / 2 - lw / 2, yy + 14, lw, 2);
     }
     ctx.globalAlpha = 1;
     ctx.restore();
@@ -868,18 +867,17 @@ export class Hud {
     ctx.shadowBlur = 26;
     ctx.fillText((c.en || '').toUpperCase(), 0, cy - bandH * 0.02);
     ctx.shadowBlur = 0;
-    ctx.font = `800 18px ${FONT}`;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(c.en, 0, cy + bandH * 0.24);
+    // The name used to appear twice, once in Japanese and once in English.
+    // With one name there is one line, and the chant moves up into the gap.
     if (c.chant) {
       ctx.font = `500 italic 13px ${FONT}`;
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
-      ctx.fillText(`"${c.chant}"`, 0, cy + bandH * 0.44);
+      ctx.fillText(`"${c.chant}"`, 0, cy + bandH * 0.26);
     }
     if (c.name) {
       ctx.font = `700 12px ${FONT}`;
       ctx.fillStyle = hexA(c.color, 0.8);
-      ctx.fillText(c.name, 0, cy + bandH * 0.58);
+      ctx.fillText(c.name, 0, cy + bandH * 0.44);
     }
     ctx.restore();
     ctx.restore();

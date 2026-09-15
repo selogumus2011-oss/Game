@@ -286,7 +286,31 @@ export class Effects {
 
       // --- black flash ---------------------------------------------------
       case 'blackflash': {
-        this.impact(1, '#ff2d2d', true, 0.42);
+        // Black Flash gets the strongest impact frame in the game, focused on
+        // the point of contact rather than the screen centre, and with the
+        // gash pass on: it is the one hit that is allowed to tear the frame.
+        this.impact(1, '#ff2d2d', true, 0.5, { x: p.x, y: p.y, z }, true);
+        // A second, shorter frame a beat later in black, so the red frame is
+        // followed by the dark one rather than fading out of it.
+        this.impact(0.72, '#120008', false, 0.3, { x: p.x, y: p.y, z }, true);
+        // Four strokes crossing the impact, which is what the crack actually
+        // is. They run across the punch rather than along it, staggered so the
+        // set lands in sequence instead of all at once.
+        const bfAngle = e.angle ?? 0;
+        for (let i = 0; i < 4; i++) {
+          const life = randRange(0.32, 0.5);
+          this.cut({
+            x: p.x, y: p.y, z,
+            angle: bfAngle + Math.PI / 2,
+            lean: (i - 1.5) * 0.42,
+            tilt: randRange(-0.3, 0.3),
+            len: randRange(4.5, 7.5),
+            width: randRange(0.12, 0.3),
+            color: i % 2 ? '#ff2d2d' : '#0a0206',
+            delay: i * 0.022,
+            life, max: life,
+          });
+        }
         this.flash('#ff2d2d', 0.55, 0.3, 'invert');
         this.flash('#000000', 0.5, 0.22, 'multiply');
         this.ring({ x: p.x, y: p.y, z, r: 0.3, target: 9, life: 0.55, color: '#ff2d2d', width: 0.4, flat: false });
@@ -304,7 +328,9 @@ export class Effects {
           colors: ['#ff2d2d', '#1a0000', '#ffffff', '#ff7a5a'],
           speedMax: 20, lifeMax: 0.9, sizeMax: 0.3, glow: 1, stretch: 0.9, gravity: 4,
         });
-        this.sprite({ x: p.x, y: p.y, z: z + 1.4, text: 'BLACK FLASH', color: '#ff2d2d', size: 64, life: 1.1, style: 'flash' });
+        // The callout is raised by whoever handles the event, because it
+        // depends on whether the cut-in took the shot — two of them on screen
+        // at once is worse than none.
         this.decal({ x: p.x, y: p.y, r: 3.4, color: '#3a0505', style: 'scorch', alpha: 0.55 });
         break;
       }

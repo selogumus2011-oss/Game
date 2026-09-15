@@ -345,7 +345,9 @@ function drawNumbers3(dl, cam, fx) {
     cam.project(n.x, n.y, n.z, proj);
     if (proj.d <= cam.near) continue;
     const k = clamp01(n.life / n.max);
-    const px = Math.max(9, n.size * cam.f / proj.d * 0.06);
+    // Capped for the same reason the callouts are: a damage number two metres
+    // from the lens would otherwise fill the screen.
+    const px = clamp(n.size * cam.f / proj.d * 0.06, 9, 34);
     dl.text(proj.d - 1, proj.x, proj.y, n.text, n.color,
       `${n.weight} ${px.toFixed(0)}px system-ui, sans-serif`, k);
   }
