@@ -381,17 +381,23 @@ function headMesh(a, opts = {}) {
      * looks cast by them instead of painted on underneath.
      */
     const fringe = () => {
-      const lens = [0.085, 0.115, 0.098, 0.125, 0.079];
-      const leans = [-0.26, -0.1, 0.05, -0.14, 0.22];
+      // Clumps, not blades. These tapered from 0.042 across to 0.012 over a
+      // length of up to 0.125 and stood 0.055 proud of the skull at the root,
+      // which is not a lock of hair — it is a knife, and every character in
+      // the cast had five of them stuck through their forehead. A clump of
+      // hair is wide, shallow, lies against the head and comes to a blunt
+      // point: short in the middle where it parts, longer at the sides.
+      const lens = [0.062, 0.082, 0.070, 0.088, 0.058];
+      const leans = [-0.22, -0.08, 0.04, -0.12, 0.18];
       for (let i = 0; i < 5; i++) {
-        const y = -0.076 + i * 0.038;
-        b.merge(taperedBox(0.055, 0.042, 0.014, 0.012, lens[i], i % 2 ? hair : hairLit),
-          matCompose(0.062, y, 0.215, leans[i], PI - 0.33, 0));
+        const y = -0.072 + i * 0.036;
+        b.merge(taperedBox(0.030, 0.058, 0.017, 0.032, lens[i], i % 2 ? hair : hairLit),
+          matCompose(0.052, y, 0.212, leans[i], PI - 0.16, 0));
       }
-      // Side locks, framing the face. Longer, and angled back along the cheek.
+      // Side locks, framing the face down past the temple.
       for (const sgn of [1, -1]) {
-        b.merge(taperedBox(0.06, 0.05, 0.018, 0.016, 0.155, hairDark),
-          matCompose(0.028, sgn * 0.086, 0.21, sgn * 0.18, PI - 0.1, 0));
+        b.merge(taperedBox(0.048, 0.05, 0.026, 0.032, 0.105, hairDark),
+          matCompose(0.026, sgn * 0.083, 0.206, sgn * 0.14, PI - 0.07, 0));
       }
     };
 
@@ -551,7 +557,10 @@ function torsoMesh(a, f) {
   const key = `torso2:${uniform}:${accent}:${a.scarf ? 1 : 0}`;
   return cached(key, () => {
     const b = new MeshBuilder();
-    const lit = shade(uniform, 1.22);
+    // A step above the uniform, not two. At 1.22 the lapels and the lit side
+    // of the ribcage merged into one bright diagonal across the chest, and
+    // every character in the cast was wearing the same sash.
+    const lit = shade(uniform, 1.13);
     const dark = shade(uniform, 0.74);
     const deep = shade(uniform, 0.5);
 
@@ -576,7 +585,7 @@ function torsoMesh(a, f) {
     // Rotating about x tips the strip's own +z toward -y, so a negative angle
     // on the left and a positive one on the right opens the V upward.
     for (const sgn of [1, -1]) {
-      b.merge(box(0.024, 0.08, 0.37, lit),
+      b.merge(box(0.024, 0.065, 0.37, lit),
         matCompose(0.108, sgn * 0.012, 0.44, -sgn * 0.34, -0.05, 0));
     }
 

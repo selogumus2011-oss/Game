@@ -192,7 +192,13 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
   // than well above it — at 1.3 they came out as the brightest thing on the
   // whole figure, so a fighter read as two white blocks floating at the ends
   // of their arms.
-  const glove = a.accent && f.tool && f.tool.shape !== 'none' ? shade(uniform, 1.12) : skin;
+  // Gloves when a weapon is being carried, but a shade off the uniform rather
+  // than well above it — at 1.3 they came out as the brightest thing on the
+  // whole figure, so a fighter read as two white blocks floating at the ends
+  // of their arms. Bare hands get the same treatment for the same reason: a
+  // hand hangs below the light and is never the brightest skin on a figure.
+  const glove = a.accent && f.tool && f.tool.shape !== 'none'
+    ? shade(uniform, 1.12) : shade(skin, 0.86);
 
   // Upper body twist.
   const tw = sk.twist;
