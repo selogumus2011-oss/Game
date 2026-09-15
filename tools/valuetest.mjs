@@ -17,7 +17,9 @@
 
 import { chromium } from 'playwright';
 
-const URL = process.env.URL || 'http://localhost:8080/';
+// Pinned so two runs frame the same arena: the prop layout comes out of
+// the match seed, and a wall that moves between runs moves the numbers.
+const URL = process.env.URL || 'http://localhost:8080/?seed=20250915';
 
 const browser = await chromium.launch({
   executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',

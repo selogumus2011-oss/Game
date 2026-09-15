@@ -361,3 +361,23 @@ html, body {
   #ui { align-items: flex-start; }
   .screen { padding-top: 12px; padding-bottom: 12px; }
 }
+
+/* A phone held sideways is 390px tall. At the desktop rhythm the title screen
+   spends 150 of those on a logo and pushes Settings off the bottom, and every
+   roster wants two thirds of the window for its list. Shrink the furniture
+   rather than asking anyone to scroll a menu to find the start button. */
+@media (max-height: 460px) {
+  .screen { padding: 8px 0; max-height: none; }
+  .title-mark { font-size: 50px; margin-bottom: 2px; }
+  .title { font-size: clamp(19px, 3.4vw, 32px); letter-spacing: .08em; }
+  .subtitle { font-size: 12px; letter-spacing: .26em; margin: 2px 0 8px; }
+  /* Flavour text is not worth pushing the start button past the fold. */
+  .tagline { display: none; }
+  .hint { margin-top: 10px; }
+  .menu-list { gap: 7px; }
+  .menu-btn, .menu-btn.wide { padding: 10px 14px; min-height: 44px; margin-top: 8px; }
+  .pause-title { font-size: 21px; margin: 2px 0 10px; }
+  .panel-head h2 { font-size: 16px; }
+  .sec { margin: 12px 0 6px; }
+  .roster, .char-detail { max-height: 46vh; }
+}

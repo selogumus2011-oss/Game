@@ -9,28 +9,55 @@
 // object, so a keyboard, a mouse, a gamepad and a finger all work in the same
 // session. On an iPad with a Magic Keyboard that matters.
 
-import { clamp, clamp01, TAU, PI } from './math.js';
+import { clamp, clamp01, TAU } from './math.js';
 
 const STICK_R = 62;        // outer ring radius in CSS pixels
 const KNOB_R = 27;
 const DEAD = 0.14;
 
-/** The action each bottom-right button fires, in draw order. */
+/** The action each bottom-right button fires. */
 const BUTTONS = [
-  { action: 'ability1', label: '1', ring: 0 },
-  { action: 'ability2', label: '2', ring: 0 },
-  { action: 'ability3', label: '3', ring: 0 },
-  { action: 'ability4', label: '4', ring: 0, max: true },
-  { action: 'block', label: 'BLK', ring: 1, hold: true },
-  { action: 'dash', label: 'DSH', ring: 1 },
-  { action: 'jump', label: 'JMP', ring: 1 },
-  { action: 'grab', label: 'GRB', ring: 1 },
-  { action: 'domain', label: 'DOM', ring: 2, big: true },
-  { action: 'simpleDomain', label: 'SD', ring: 2, hold: true },
-  { action: 'amplify', label: 'AMP', ring: 2 },
-  { action: 'rct', label: 'RCT', ring: 2, hold: true },
-  { action: 'firstPerson', label: 'VIEW', ring: 2 },
+  { action: 'ability1', label: '1' },
+  { action: 'ability2', label: '2' },
+  { action: 'ability3', label: '3' },
+  { action: 'ability4', label: '4', max: true },
+  { action: 'block', label: 'BLK' },
+  { action: 'dash', label: 'DSH' },
+  { action: 'jump', label: 'JMP' },
+  { action: 'grab', label: 'GRB' },
+  { action: 'domain', label: 'DOM' },
+  { action: 'simpleDomain', label: 'SD' },
+  { action: 'amplify', label: 'AMP' },
+  { action: 'rct', label: 'RCT' },
+  { action: 'firstPerson', label: 'VIEW' },
 ];
+
+// On a phone only two rows of buttons fit inside a thumb's reach, so the rack
+// is paged: the four techniques are always there, and the row above swaps
+// between the moves you press every few seconds and the ones you press every
+// few minutes. VIEW is not on it at all — it is a settings toggle, not a
+// combat key, and it is the first thing to cut when there are four slots.
+const PAGE_ACTION = '_page';
+const PAGE_BUTTON = { action: PAGE_ACTION, label: 'MORE', page: true };
+// There is no Escape key on a phone, and without this there is no way out of a
+// match. Deliberately in the far corner, away from the thumbs.
+const PAUSE_ACTION = '_pause';
+const PAUSE_BUTTON = { action: PAUSE_ACTION, label: '| |', pause: true, system: true };
+
+// Rows, bottom first: the bottom-right is the easiest place for a right thumb
+// to land, so the most-pressed buttons are nearest it.
+const PHONE_PAGES = [
+  ['domain', 'jump', 'dash', 'block'],
+  ['rct', 'amplify', 'simpleDomain', 'grab'],
+];
+const PHONE_ROW0 = ['ability1', 'ability2', 'ability3', 'ability4'];
+const TABLET_ROWS = [
+  ['ability1', 'ability2', 'ability3', 'ability4', 'block'],
+  ['dash', 'jump', 'grab', 'amplify', 'domain'],
+  ['firstPerson', 'rct', 'simpleDomain'],
+];
+
+const defOf = (name) => (name === PAGE_ACTION ? PAGE_BUTTON : BUTTONS.find((b) => b.action === name));
 
 export class TouchControls {
   constructor(input, canvas) {
@@ -47,6 +74,7 @@ export class TouchControls {
     this.firstPerson = false;
     this.buttonTouches = new Map(); // touchId -> action
     this.layout = [];
+    this.page = 0;                // which half of the phone button rack is up
     this.opacity = 0;
     this._listeners = [];
     if (canvas && typeof window !== 'undefined' && 'ontouchstart' in window) this.attach();
@@ -78,38 +106,62 @@ export class TouchControls {
   }
 
   /**
-   * Button positions. Three arcs sweeping up from the bottom-right corner, so
-   * the whole set is inside a thumb's reach from where a hand actually holds a
-   * tablet.
+   * Button positions: a block of them wedged into the bottom-right corner,
+   * rows stacked bottom-up and right-aligned on the thumb.
+   *
+   * This used to be three arcs sweeping out of the corner, which looked better
+   * in a mock-up and failed twice over. Thirteen buttons on arcs need about
+   * 280px of reach and a thumb on a 390px screen has roughly 200, so on a
+   * phone the domain button sat off the right edge of every viewport and the
+   * four technique buttons overlapped into one blob. Solving the radii fixed
+   * the geometry and left the reading order scattered: rings of four, four and
+   * five interleave, so the numbers ended up shuffled in among the letters.
+   * A grid packs tighter and reads in order.
+   *
+   * The size is solved rather than chosen. Buttons may take the right 55% of
+   * the width — the rest belongs to the movement thumb — and the bottom 48% of
+   * the height, and the largest that fits both wins. 44px across is the floor
+   * on every touch platform; anything under it is a missed input.
    */
   _layout() {
     const w = this.width, h = this.height;
-    const cx = w - 74;
-    const cy = h - 74;
-    const compact = Math.min(w, h) < 620;
-    const scale = compact ? 0.84 : 1;
-    const rings = [104, 172, 240].map((r) => r * scale);
-    const counts = [4, 4, 4];
-    const spans = [
-      { from: -PI * 0.5, to: -PI * 0.96 },
-      { from: -PI * 0.42, to: -PI * 1.0 },
-      { from: -PI * 0.38, to: -PI * 1.02 },
-    ];
     this.layout = [];
-    let i = 0;
-    for (let ring = 0; ring < 3; ring++) {
-      const inRing = BUTTONS.filter((b) => b.ring === ring);
-      for (let k = 0; k < inRing.length; k++) {
-        const t = inRing.length === 1 ? 0.5 : k / (inRing.length - 1);
-        const a = spans[ring].from + (spans[ring].to - spans[ring].from) * t;
+    if (!w || !h) return;
+
+    const phone = Math.min(w, h) < 500;
+    const rows = phone
+      ? [PHONE_ROW0, PHONE_PAGES[this.page], [PAGE_ACTION]]
+      : TABLET_ROWS;
+    const cols = Math.max(...rows.map((r) => r.length));
+    const margin = 12;
+    const maxW = w * 0.55 - margin;
+    const maxH = h * 0.48;
+    let r = 22, gap = 6;
+    for (const [cr, cg] of [[34, 14], [31, 13], [28, 12], [26, 10], [24, 8], [22, 6]]) {
+      const p = cr * 2 + cg;
+      if (cols * p - cg <= maxW && rows.length * p - cg + margin <= maxH) { r = cr; gap = cg; break; }
+    }
+    const pitch = r * 2 + gap;
+    const right = w - margin - r;
+    const bottom = h - margin - r;
+    for (let row = 0; row < rows.length; row++) {
+      const names = rows[row];
+      for (let k = 0; k < names.length; k++) {
+        const def = defOf(names[k]);
+        if (!def) continue;
+        // Right-aligned, so a short row still hugs the thumb.
         this.layout.push({
-          def: inRing[k],
-          x: cx + Math.cos(a) * rings[ring],
-          y: cy + Math.sin(a) * rings[ring],
-          r: (inRing[k].big ? 34 : 27) * scale,
+          def, x: right - (names.length - 1 - k) * pitch, y: bottom - row * pitch, r,
         });
-        i++;
       }
+    }
+    this.layout.push({ def: PAUSE_BUTTON, x: 34, y: 34, r: 22 });
+
+    // Last word on the matter: a button you cannot touch is worse than one
+    // that is merely in an awkward place.
+    for (const b of this.layout) {
+      b.x = clamp(b.x, b.r + 4, w - b.r - 4);
+      b.y = clamp(b.y, b.r + 4, h - b.r - 4);
     }
   }
 
@@ -117,12 +169,31 @@ export class TouchControls {
 
   _rect() { return this.canvas.getBoundingClientRect(); }
 
+  /**
+   * The button under a finger, with a little slop around each one so a near
+   * miss still counts. Packed tightly enough that the slop zones overlap, so
+   * take the nearest rather than the first — otherwise a thumb between two
+   * buttons always fires whichever happens to be earlier in the list.
+   */
   _hitButton(x, y) {
+    let best = null, bestD = Infinity;
     for (const b of this.layout) {
       const d = Math.hypot(x - b.x, y - b.y);
-      if (d < b.r + 12) return b;
+      if (d < b.r + 12 && d < bestD) { best = b; bestD = d; }
     }
-    return null;
+    return best;
+  }
+
+  /** Swap the phone button rack over to its other page. */
+  _flipPage() {
+    this.page = this.page === 1 ? 0 : 1;
+    // Anything held on the row that just left must not stay held forever.
+    for (const [id, act] of this.buttonTouches) {
+      if (act === PAGE_ACTION) continue;
+      this.input.releaseVirtual(act);
+      this.buttonTouches.delete(id);
+    }
+    this._layout();
   }
 
   _start(e) {
@@ -134,7 +205,9 @@ export class TouchControls {
       const btn = this._hitButton(x, y);
       if (btn) {
         this.buttonTouches.set(t.identifier, btn.def.action);
-        this.input.pressVirtual(btn.def.action);
+        if (btn.def.page) this._flipPage();
+        else if (btn.def.pause) this.onPause?.();
+        else this.input.pressVirtual(btn.def.action);
         continue;
       }
       if (x < this.width * 0.45 && !this.moveTouch) {
@@ -185,7 +258,7 @@ export class TouchControls {
       const action = this.buttonTouches.get(t.identifier);
       if (action !== undefined) {
         this.buttonTouches.delete(t.identifier);
-        this.input.releaseVirtual(action);
+        if (action !== PAGE_ACTION && action !== PAUSE_ACTION) this.input.releaseVirtual(action);
         continue;
       }
       if (this.moveTouch && t.identifier === this.moveTouch.id) this.moveTouch = null;
@@ -270,13 +343,16 @@ export class TouchControls {
         : def.action === 'domain' ? '#cfa8ff'
         : def.action.startsWith('ability') ? '#8ad8ff'
         : '#e8ecf4';
+      const label = def.page ? (this.page === 1 ? 'MAIN' : 'MORE') : def.label;
+      // The pause key sits out of the way and stays out of the way visually.
+      const av = alpha * (def.system ? 0.7 : 1);
       ring(ctx, b.x, b.y, b.r,
-        down ? 'rgba(255,255,255,0.85)' : hexA(accent, 0.45),
-        down ? hexA(accent, 0.45) : 'rgba(10,12,18,0.46)', alpha);
-      ctx.globalAlpha = alpha;
+        down ? 'rgba(255,255,255,0.85)' : hexA(accent, def.system ? 0.26 : 0.45),
+        down ? hexA(accent, 0.45) : 'rgba(10,12,18,0.46)', av);
+      ctx.globalAlpha = av;
       ctx.fillStyle = down ? '#ffffff' : accent;
-      ctx.font = `800 ${Math.round(b.r * (def.label.length > 2 ? 0.38 : 0.6))}px system-ui, sans-serif`;
-      ctx.fillText(def.label, b.x, b.y + 1);
+      ctx.font = `800 ${Math.round(b.r * (label.length > 2 ? 0.38 : 0.6))}px system-ui, sans-serif`;
+      ctx.fillText(label, b.x, b.y + 1);
       ctx.globalAlpha = 1;
     }
     ctx.restore();

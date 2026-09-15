@@ -168,11 +168,14 @@ class Game {
   startMatch(sel) {
     this.effects.clear();
     audio.stopAllDrones();
+    // ?seed=N pins the match. The arena's layout comes out of this, so without
+    // a way to fix it the screenshot harnesses compare two different sets.
+    const forced = new URLSearchParams(location.search).get('seed');
     const world = new World({
       mode: sel.mode,
       arena: sel.arena,
       difficulty: sel.difficulty,
-      seed: (Math.random() * 0xffffffff) >>> 0,
+      seed: forced !== null ? (Number(forced) >>> 0) : (Math.random() * 0xffffffff) >>> 0,
     });
     this.world = world;
     world.aimAssist = this.aimAssist ?? 0.7;
@@ -289,6 +292,10 @@ class Game {
     this.touch.resize(this.renderer.width, this.renderer.height);
     this.touch.update(dt);
     this.hud.touchMode = this.touch.active;
+    // A finger has no Escape key, so the touch layer gets its own way out.
+    if (!this.touch.onPause) {
+      this.touch.onPause = () => { if (this.state === 'playing') this.pause(); };
+    }
 
     if (this.state === 'playing' && this.world) {
       const w = this.world;

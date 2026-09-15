@@ -40,6 +40,11 @@ export class Hud {
     const p = world.player;
     if (!p || this.hidden || this.cinematicHidden) return;
 
+    // A phone is not a small desktop. Panels laid out for 1280×760 cover a
+    // third of a 844×390 screen each and land on top of one another; below
+    // this the HUD shrinks and rearranges rather than just overflowing.
+    this.small = Math.min(W, H) < 500;
+
     this.hpSmooth = lerp(this.hpSmooth, p.hpFraction, 1 - Math.exp(-14 * dt));
     this.hpChip = lerp(this.hpChip, p.hpFraction, 1 - Math.exp(-3 * dt));
     this.ceSmooth = lerp(this.ceSmooth, p.ceFraction, 1 - Math.exp(-16 * dt));
@@ -187,6 +192,23 @@ export class Hud {
 
   // -------------------------------------------------------------------------
 
+  /**
+   * How much the bottom-left stack shrinks on a small screen, and the
+   * transform that does it. Everything down there is anchored to the corner
+   * and measured relative to it, so one scale about that corner is enough.
+   */
+  _shrinkCorner(ctx, W, H) {
+    if (!this.small) return 1;
+    // The touch button block claims the right 55% of a phone's width, so the
+    // panel has to finish inside the rest of it — in portrait the full-size
+    // bars ran straight under the technique buttons.
+    const s = Math.min(0.66, (W * 0.44) / 336);
+    ctx.translate(26, H);
+    ctx.scale(s, s);
+    ctx.translate(-26, -H);
+    return s;
+  }
+
   drawVitals(ctx, world, p, W, H) {
     const x = 26;
     const y = H - 118;
@@ -194,6 +216,7 @@ export class Hud {
 
     // Portrait block.
     ctx.save();
+    this._shrinkCorner(ctx, W, H);
     ctx.fillStyle = 'rgba(10,12,16,0.72)';
     roundRect(ctx, x - 12, y - 34, w + 24, 118, 10);
     ctx.fill();
@@ -271,7 +294,76 @@ export class Hud {
     ctx.restore();
   }
 
+  /**
+   * The technique rack, as a list rather than a rack.
+   *
+   * On a phone the four cards sat across the bottom middle, directly on top of
+   * the vitals panel and duplicating the on-screen 1–4 buttons a centimetre to
+   * their right. The buttons keep the input; this keeps the information the
+   * buttons cannot fit — what each one is, what it costs, and how long until
+   * it comes back.
+   */
+  _drawAbilitiesCompact(ctx, p, W, H) {
+    const abilities = p.abilityList();
+    const w = Math.min(168, W * 0.44);
+    const rowH = 15, gap = 3;
+    const x = 12;
+    // Clear of the touch layer's pause button, which owns the top-left corner.
+    let y = this.touchMode ? 64 : 12;
+    const col = p.technique?.color || '#ffffff';
+
+    ctx.save();
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < abilities.length; i++) {
+      const ab = abilities[i];
+      const ready = p.abilityReady(i);
+      const cd = p.cooldowns['ab' + i] || 0;
+      const cdFrac = cd > 0 ? clamp01(cd / (ab.cooldown || 1)) : 0;
+      const mid = y + rowH / 2;
+
+      ctx.fillStyle = 'rgba(10,12,16,0.72)';
+      roundRect(ctx, x, y, w, rowH, 4);
+      ctx.fill();
+      // The cooldown fills back in from the left, so the row is a progress bar.
+      if (cdFrac > 0) {
+        ctx.fillStyle = hexA(col, 0.18);
+        ctx.fillRect(x, y, w * (1 - cdFrac), rowH);
+      }
+      roundRect(ctx, x, y, w, rowH, 4);
+      ctx.strokeStyle = ready ? hexA(col, 0.7) : 'rgba(255,255,255,0.1)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      if (ab.ultimate) {
+        ctx.fillStyle = '#ffd166';
+        ctx.fillRect(x, y + 2, 2, rowH - 4);
+      }
+
+      ctx.textAlign = 'left';
+      ctx.font = `800 9px ${FONT}`;
+      ctx.fillStyle = ready ? hexA(col, 0.95) : 'rgba(255,255,255,0.3)';
+      ctx.fillText(String(i + 1), x + 6, mid);
+      ctx.font = `700 9px ${FONT}`;
+      ctx.fillStyle = ready ? '#ffffff' : 'rgba(255,255,255,0.32)';
+      ctx.fillText(fitText(ctx, shortName(ab.name).toUpperCase(), w - 46), x + 16, mid);
+
+      ctx.textAlign = 'right';
+      if (cd > 0.05) {
+        ctx.fillStyle = '#ffd166';
+        ctx.fillText(cd.toFixed(1), x + w - 6, mid);
+      } else {
+        ctx.fillStyle = p.canAfford(ab.cost) ? 'rgba(120,200,255,0.9)' : 'rgba(255,120,120,0.9)';
+        ctx.fillText(String(Math.round(ab.cost * p.costMultiplier())), x + w - 6, mid);
+      }
+      y += rowH + gap;
+    }
+    ctx.restore();
+  }
+
   drawAbilities(ctx, world, p, W, H) {
+    // Wherever the on-screen buttons are up they already carry 1–4, so the
+    // card rack would be the same four techniques drawn a second time a
+    // centimetre to their left.
+    if (this.small || this.touchMode) { this._drawAbilitiesCompact(ctx, p, W, H); return; }
     const abilities = p.abilityList();
     const size = 52;
     const gap = 8;
@@ -610,13 +702,15 @@ export class Hud {
   drawKillFeed(ctx, world, W, H) {
     ctx.save();
     ctx.textAlign = 'right';
-    ctx.font = `600 11px ${FONT}`;
-    let y = 200;   // clear of the minimap in the top-right corner
+    const box = this._minimapBox(W, H);
+    ctx.font = `600 ${this.small ? 9 : 11}px ${FONT}`;
+    let y = box.y + box.size + 28;   // clear of the minimap in the top-right corner
+    const step = this.small ? 12 : 16;
     for (const k of world.killFeed.slice(-5)) {
       ctx.globalAlpha = clamp01(k.t / 1.2);
       ctx.fillStyle = k.color;
-      ctx.fillText(k.text, W - 26, y);
-      y += 16;
+      ctx.fillText(k.text, W - box.m, y);
+      y += step;
     }
     ctx.globalAlpha = 1;
     ctx.restore();
@@ -650,27 +744,43 @@ export class Hud {
       const a = Math.min(inA, outA);
       ctx.globalAlpha = a;
       const yy = H * 0.26 + (1 - inA) * -20;
-      ctx.font = `900 ${Math.round(34 + inA * 4)}px ${FONT}`;
+      const text = (b.text || '').toUpperCase();
+      // A headline has to fit the screen it is printed on. At a fixed 34px
+      // "TRAINING — LEARN THE BLACK FLASH BAND" is twice the width of a phone
+      // and ran off both edges at once.
+      const size = Math.round(34 + inA * 4);
+      const maxW = W * 0.88;
+      ctx.font = `900 ${size}px ${FONT}`;
+      let tw = ctx.measureText(text).width;
+      if (tw > maxW) {
+        ctx.font = `900 ${Math.max(12, Math.floor(size * (maxW / tw)))}px ${FONT}`;
+        tw = ctx.measureText(text).width;
+      }
       ctx.fillStyle = b.color;
       ctx.shadowColor = b.color;
       ctx.shadowBlur = 26;
-      ctx.fillText((b.text || '').toUpperCase(), W / 2, yy);
+      ctx.fillText(text, W / 2, yy);
       ctx.shadowBlur = 0;
       // A banner used to be two lines, a Japanese headline over its English.
       // There is only the one line now, so the subtitle is gone and the
       // underline moves up to sit against it.
       ctx.fillStyle = hexA(b.color, 0.7);
-      const lw = 260 * clamp01(t * 3);
-      ctx.fillRect(W / 2 - lw / 2, yy + 14, lw, 2);
+      const lw = Math.min(260, tw) * clamp01(t * 3);
+      ctx.fillRect(W / 2 - lw / 2, yy + size * 0.4, lw, 2);
     }
     ctx.globalAlpha = 1;
     ctx.restore();
   }
 
+  /** Where the minimap sits, so the kill feed can stay clear of it. */
+  _minimapBox(W, H) {
+    const size = this.small ? Math.round(Math.min(86, Math.min(W, H) * 0.26)) : 132;
+    const m = this.small ? 12 : 26;
+    return { size, x: W - size - m, y: m, m };
+  }
+
   drawMinimap(ctx, world, cam, W, H) {
-    const size = 132;
-    const x = W - size - 26;
-    const y = 26;
+    const { size, x, y } = this._minimapBox(W, H);
     const scale = size / (world.arenaRadius * 2.1);
     const cx = x + size / 2;
     const cy = y + size / 2;
@@ -737,6 +847,8 @@ export class Hud {
   drawStatuses(ctx, p, W, H) {
     if (!p.statuses.length) return;
     ctx.save();
+    // Stacked on top of the vitals block, so it rides the same shrink.
+    this._shrinkCorner(ctx, W, H);
     const x = 26;
     let y = H - 178;
     ctx.textAlign = 'left';
@@ -763,7 +875,18 @@ export class Hud {
     ctx.textAlign = 'left';
     ctx.font = `600 11px ${FONT}`;
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    const lines = this.touchMode ? [
+    // A ten-line legend is a reference card on a desktop and a blindfold on a
+    // phone — it covered the player, the vitals and half the arena. There the
+    // buttons are already labelled, so this only has to say what is not
+    // written on one.
+    const lines = this.small ? [
+      'LEFT half  drag to move',
+      'RIGHT half hold to attack',
+      'MORE  the rest of the buttons',
+      '',
+      'BLACK FLASH — land your next hit',
+      'while the ring’s red band is lit.',
+    ] : this.touchMode ? [
       'LEFT half   drag to move',
       'RIGHT half  touch to aim, hold to attack',
       '1-4         cursed techniques',
@@ -790,16 +913,21 @@ export class Hud {
       'BLACK FLASH — land your next hit',
       'while the red band on the ring is lit.',
     ];
-    const boxW = 268;
-    let y = H * 0.30;
+    const fs = this.small ? 9 : 11;
+    const step = this.small ? 12 : 15;
+    const boxW = this.small ? Math.min(196, W * 0.5) : 268;
+    const x = this.small ? 12 : 18;
+    // Sit the card just above the vitals block rather than across the middle
+    // of the screen, where on a phone the fight is.
+    let y = this.small ? H - 104 - lines.length * step : H * 0.30;
     ctx.fillStyle = 'rgba(6,8,12,0.55)';
-    roundRect(ctx, 18, y - 20, boxW, lines.length * 15 + 16, 8);
+    roundRect(ctx, x, y - 20, boxW, lines.length * step + 16, 8);
     ctx.fill();
-    ctx.font = `600 11px ${FONT}`;
+    ctx.font = `600 ${fs}px ${FONT}`;
     for (const l of lines) {
       ctx.fillStyle = l.startsWith('BLACK') ? '#ff6b6b' : 'rgba(255,255,255,0.8)';
-      ctx.fillText(l, 28, y - 4);
-      y += 15;
+      ctx.fillText(l, x + 10, y - 4);
+      y += step;
     }
     ctx.restore();
   }

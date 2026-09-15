@@ -96,7 +96,7 @@ export class UI {
             <span class="en">Settings</span>
           </button>
         </div>
-        <div class="hint">Best with sound on. Mouse + keyboard or a gamepad.</div>
+        <div class="hint">Best with sound on. Mouse and keyboard, a gamepad, or touch.</div>
       </div>
     `, 'title-screen');
 

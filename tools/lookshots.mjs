@@ -10,7 +10,9 @@
 import { chromium } from 'playwright';
 import { mkdir } from 'node:fs/promises';
 
-const URL = process.env.URL || 'http://localhost:8080/';
+// Pinned so two runs frame the same arena: the prop layout comes out of
+// the match seed, and a wall that moves between runs moves the numbers.
+const URL = process.env.URL || 'http://localhost:8080/?seed=20250915';
 const OUT = process.argv[2] || process.env.OUT || '/tmp/claude-0/look';
 await mkdir(OUT, { recursive: true });
 

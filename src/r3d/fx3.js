@@ -364,8 +364,15 @@ function drawSprites3(dl, cam, fx) {
     // fits across the screen.
     const px = clamp(s.size * cam.f / proj.d * 0.08, 11, 54);
     const rise = (1 - k) * 26;
-    dl.text(proj.d - 0.5, proj.x, proj.y - rise, s.text, s.color,
-      `800 ${(px * 0.62).toFixed(0)}px system-ui, sans-serif`, k, true);
+    // A callout announces a technique, so it is no use half off the screen —
+    // and on a phone "THREE-PART BARRAGE" at full size is wider than the whole
+    // viewport. Shrink it to fit, then slide it back inside the frame.
+    const n = Math.max(1, (s.text || '').length);
+    const size = Math.min(px * 0.62, (cam.width * 0.92) / (n * 0.62));
+    const half = n * size * 0.31;
+    const x = clamp(proj.x, half + 6, cam.width - half - 6);
+    dl.text(proj.d - 0.5, x, proj.y - rise, s.text, s.color,
+      `800 ${size.toFixed(0)}px system-ui, sans-serif`, k, true);
   }
 }
 
