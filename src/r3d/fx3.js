@@ -298,6 +298,11 @@ function drawBolts3(dl, cam, fx) {
   }
 }
 
+/** Scratch for one shard's screen-space outline. */
+const shardPts = new Float32Array(10);
+/** The contour colour for drawn energy. Near-black, never pure. */
+const INK = 'rgba(9,7,14,0.92)';
+
 function drawParticles3(dl, cam, fx, q) {
   const step = q.detail > 1 ? 1 : q.detail > 0 ? 1 : 2;
   const ps = fx.particles;
@@ -309,13 +314,37 @@ function drawParticles3(dl, cam, fx, q) {
     const size = (p.size + p.grow * (1 - k)) * cam.f / proj.d * 2;
     if (size < 0.6) continue;
     const alpha = clamp01(k * (p.fade ?? 1));
-    if (p.kind === 'spark' || p.stretch > 0) {
+    if (p.kind !== 'shard' && (p.kind === 'spark' || p.stretch > 0)) {
       // Stretched sparks trail along their velocity.
       const vx = p.vx, vy = p.vy, vz = p.vz;
       const sl = Math.max(0.05, Math.hypot(vx, vy, vz) * (p.stretch || 0.05));
       cam.project(p.x - vx * 0.02, p.y - vy * 0.02, p.z - vz * 0.02, proj2);
       const lw = Math.max(1, size * 0.4);
       dl.line(proj.d, proj.x, proj.y, proj2.x, proj2.y, p.color, lw, true, alpha);
+      continue;
+    }
+    if (p.kind === 'shard') {
+      // Cursed energy is drawn, not rendered: an angular dart with a hard
+      // contour, pointing the way it is travelling. A soft radial blob reads
+      // as a light; this reads as somebody's brush.
+      cam.project(p.x - p.vx * 0.03, p.y - p.vy * 0.03, p.z - p.vz * 0.03, proj2);
+      let dx = proj.x - proj2.x, dy = proj.y - proj2.y;
+      const dl2 = Math.hypot(dx, dy);
+      if (dl2 < 0.001) { dx = 0; dy = -1; } else { dx /= dl2; dy /= dl2; }
+      const nx = -dy, ny = dx;
+      const len = size * (1.1 + p.stretch * 2.4);
+      const wid = size * 0.42;
+      // A dart: tip, two shoulders set back unevenly, tail. The asymmetry is
+      // deliberate — a symmetrical shape reads as a generated particle.
+      shardPts[0] = proj.x + dx * len;
+      shardPts[1] = proj.y + dy * len;
+      shardPts[2] = proj.x + nx * wid - dx * len * 0.18;
+      shardPts[3] = proj.y + ny * wid - dy * len * 0.18;
+      shardPts[4] = proj.x - dx * len * 0.72;
+      shardPts[5] = proj.y - dy * len * 0.72;
+      shardPts[6] = proj.x - nx * wid * 0.74 - dx * len * 0.05;
+      shardPts[7] = proj.y - ny * wid * 0.74 - dy * len * 0.05;
+      dl.poly(proj.d, shardPts, 4, p.color, false, alpha, INK, Math.max(1, size * 0.13));
       continue;
     }
     const sprite = p.kind === 'smoke' || p.glow < 0.3

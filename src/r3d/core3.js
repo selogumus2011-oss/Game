@@ -512,14 +512,22 @@ export class DrawList {
     let it = this.items[this.n];
     if (!it) {
       it = { kind: 0, z: 0, pts: new Float32Array(10), count: 0, style: '', alpha: 1, add: false,
-             sprite: null, w: 0, h: 0, rot: 0, text: '', font: '', lw: 1 };
+             sprite: null, w: 0, h: 0, rot: 0, text: '', font: '', lw: 1, ink: null };
       this.items.push(it);
     }
     this.n++;
     return it;
   }
 
-  poly(z, xs, count, style, add = false, alpha = 1) {
+  /**
+   * A filled polygon, optionally inked.
+   *
+   * `ink` draws a line round the shape after filling it. Cursed energy in this
+   * show is drawn, not rendered: it has a hard contour the same way a character
+   * does, and a shape without one reads as a light source rather than as
+   * something somebody painted.
+   */
+  poly(z, xs, count, style, add = false, alpha = 1, ink = null, inkW = 1.6) {
     const it = this._next();
     it.kind = KIND_POLY;
     it.z = z;
@@ -528,6 +536,8 @@ export class DrawList {
     it.style = style;
     it.add = add;
     it.alpha = alpha;
+    it.ink = ink;
+    it.lw = inkW;
     return it;
   }
 
@@ -602,6 +612,17 @@ export class DrawList {
           ctx.closePath();
           ctx.fillStyle = it.style;
           ctx.fill();
+          if (it.ink) {
+            // Ink never goes down additively — a lightened black line is no
+            // line at all, which is the whole reason it is drawn separately.
+            const prev = ctx.globalCompositeOperation;
+            if (it.add) ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = it.ink;
+            ctx.lineWidth = it.lw;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+            ctx.globalCompositeOperation = prev;
+          }
           break;
         }
         case KIND_SPRITE: {

@@ -123,7 +123,8 @@ export class Effects {
           color, width: 0.08, flat: false });
         this.burst(x, y, z, n(14), {
           color, speedMin: -9, speedMax: -3, lifeMax: 0.4, glow: 1,
-          gravity: 0, drag: 0.6, stretch: 0.7,
+          gravity: 0, drag: 0.6, stretch: 0.7, sizeMin: 0.08, sizeMax: 0.2,
+          kind: 'shard',
         });
         break;
 
@@ -132,7 +133,7 @@ export class Effects {
           color, width: 0.18, flat: false });
         this.burst(x, y, z, n(22), {
           color, speedMax: 11 + s * 9, lifeMax: 0.55, glow: 1,
-          sizeMax: 0.18, stretch: 0.5,
+          sizeMin: 0.09, sizeMax: 0.22, stretch: 0.5, kind: 'shard',
         });
         break;
 
@@ -172,7 +173,7 @@ export class Effects {
         });
         this.burst(x + Math.cos(angle) * 0.9, y + Math.sin(angle) * 0.9, z, n(12), {
           color, angle, spread: 0.5, speedMax: 13, lifeMax: 0.4,
-          glow: 1, stretch: 1.1,
+          glow: 1, stretch: 1.1, sizeMin: 0.08, sizeMax: 0.2, kind: 'shard',
         });
         break;
       }
@@ -227,7 +228,8 @@ export class Effects {
             life: 0.5 + i * 0.12, color, width: 0.06, flat: false, alpha: 0.7 });
         }
         this.burst(x, y, z, n(8), {
-          color, speedMax: 2.2, lifeMax: 0.9, gravity: -1, glow: 1, sizeMax: 0.1,
+          color, speedMax: 2.2, lifeMax: 0.9, gravity: -1, glow: 1,
+          sizeMin: 0.07, sizeMax: 0.16, kind: 'shard',
         });
         break;
 
@@ -262,11 +264,15 @@ export class Effects {
         }
         this.burst(x, y, z, n(10), {
           color, angle, spread: 0.9, speedMax: 8, lifeMax: 0.4, glow: 0.8,
+          sizeMin: 0.09, sizeMax: 0.22, kind: 'shard',
         });
         break;
 
       default:
-        this.burst(x, y, z, n(14), { color, speedMax: 8, lifeMax: 0.5, glow: 0.8 });
+        this.burst(x, y, z, n(14), {
+          color, speedMax: 8, lifeMax: 0.5, glow: 0.8,
+          sizeMin: 0.09, sizeMax: 0.22, kind: 'shard',
+        });
         break;
     }
   }
@@ -302,7 +308,10 @@ export class Effects {
         drag: opts.drag ?? 2.2,
         glow: opts.glow ?? 0.6,
         kind: opts.kind || 'dot',
-        stretch: opts.stretch ?? 0,
+        // Varied per particle, not per burst. A set of shards all the same
+        // length lands as a clean star, which is a generated shape; the drawn
+        // ones are ragged because no two strokes of a brush match.
+        stretch: (opts.stretch ?? 0) * randRange(0.45, 1.75),
       }, opts.extra || {}));
     }
     for (const p of this.particles) if (p.max === undefined) p.max = p.life;
