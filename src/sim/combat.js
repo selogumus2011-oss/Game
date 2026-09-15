@@ -430,7 +430,7 @@ function onBlackFlash(world, attacker, victim, hit) {
   world.event({ type: 'blackflash', attacker: attacker.id, victim: victim.id, chain: fw.chain });
   if (attacker.isPlayer) {
     world.notify(fw.chain > 1 ? `BLACK FLASH ×${fw.chain}` : 'BLACK FLASH', '#ff2d2d');
-    world.banner('黒閃', fw.chain > 1 ? `Black Flash — chain ${fw.chain}` : 'Black Flash', '#ff2d2d', 1.5);
+    world.banner(null, fw.chain > 1 ? `Black Flash — chain ${fw.chain}` : 'Black Flash', '#ff2d2d', 1.5);
   }
 }
 
@@ -443,7 +443,7 @@ function adaptTo(world, victim, hit) {
     addStatus(victim, { type: 'adaptation', time: 9999, power: Math.min(0.75, n / 32) });
     world.fx('adapt', { pos: victim.pos, z: victim.z + 1.4 });
     world.audio('warn', { volume: 0.8 });
-    world.banner('適応', `Adapted to ${key}`, '#c8b06a', 1.4);
+    world.banner(null, `Adapted to ${key}`, '#c8b06a', 1.4);
   }
 }
 

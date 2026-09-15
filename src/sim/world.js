@@ -476,7 +476,7 @@ export class World {
           return;
         }
         const entry = WAVE_TABLE[this.wave - 1];
-        this.banner(entry.boss ? '特級' : `第${this.wave}波`, entry.boss ? 'Special Grade' : `Wave ${this.wave}`, entry.boss ? '#ff4d4d' : '#8ad8ff', 2.2);
+        this.banner(null, entry.boss ? 'Special Grade' : `Wave ${this.wave}`, entry.boss ? '#ff4d4d' : '#8ad8ff', 2.2);
         for (const [id, count] of entry.spawns) {
           for (let i = 0; i < count; i++) {
             const ang = this.rng.angle();
@@ -526,7 +526,7 @@ export class World {
       } : null,
     };
     this.event({ type: 'matchEnd', victory });
-    this.banner(victory ? '祓除完了' : '敗北', victory ? 'Exorcism Complete' : 'Defeat', victory ? '#8ef0bd' : '#ff4d4d', 4);
+    this.banner(null, victory ? 'Exorcism Complete' : 'Defeat', victory ? '#8ef0bd' : '#ff4d4d', 4);
   }
 
   // -------------------------------------------------------------------------
@@ -797,7 +797,7 @@ export class World {
   breakVow(f, kind) {
     const vow = f.vows.find((v) => v.breakOn === kind);
     this.audio('domainBreak', { volume: 0.9 });
-    this.banner('束縛違反', 'Binding Vow Broken', '#ff2d2d', 2.4);
+    this.banner(null, 'Binding Vow Broken', '#ff2d2d', 2.4);
     if (kind === 'timeout') {
       f.takeTrueDamage(f.maxHp * 10, 'a broken binding vow');
       return;
@@ -842,7 +842,7 @@ export class World {
     this.slowmoTime = Math.max(this.slowmoTime, time);
     if (this.slowmoTime <= 0) this.slowmoScale = 1;
   }
-  banner(jp, en, color, time = 2) { this.banners.push({ jp, en, color, t: time, max: time }); }
+  banner(_jp, en, color, time = 2) { this.banners.push({ en, color, t: time, max: time }); }
   notify(text, color = '#ffffff') {
     const last = this.notifications[this.notifications.length - 1];
     if (last && last.text === text && last.t > 1.2) return;

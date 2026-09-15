@@ -269,7 +269,7 @@ export class Effects {
         this.ring({ x: p.x, y: p.y, z, r: 0.2, target: 4.5, life: 0.42, color: '#ffe9a0', width: 0.16, flat: false });
         this.ring({ x: p.x, y: p.y, z, r: 0.2, target: 2.6, life: 0.3, color: '#ffffff', width: 0.1, flat: false });
         this.burst(p.x, p.y, z, 26, { color: '#ffe9a0', speedMax: 12, lifeMax: 0.5, glow: 1, stretch: 0.6 });
-        this.sprite({ x: p.x, y: p.y, z: z + 0.6, text: '弾', color: '#ffe9a0', size: 34, life: 0.7 });
+        this.sprite({ x: p.x, y: p.y, z: z + 0.6, text: 'PARRY', color: '#ffe9a0', size: 34, life: 0.7 });
         break;
       case 'parryFlash':
         this.ring({ x: p.x, y: p.y, z, r: 1.4, target: 0.6, life: 0.2, color: '#ffd166', width: 0.06, flat: false, alpha: 0.7 });
@@ -278,7 +278,7 @@ export class Effects {
         this.impact(0.6, '#ffb3b3', false, 0.26);
         this.flash('#ff6b6b', 0.25, 0.2);
         this.burst(p.x, p.y, z, 30, { color: '#ffb3b3', speedMax: 10, lifeMax: 0.8 });
-        this.sprite({ x: p.x, y: p.y, z: z + 0.8, text: '崩', color: '#ff6b6b', size: 40, life: 0.8 });
+        this.sprite({ x: p.x, y: p.y, z: z + 0.8, text: 'GUARD BREAK', color: '#ff6b6b', size: 40, life: 0.8 });
         break;
       case 'dodge':
         this.burst(p.x, p.y, z + 0.4, 8, { color: '#9fe870', speedMax: 4, lifeMax: 0.35, gravity: 1 });
@@ -304,7 +304,7 @@ export class Effects {
           colors: ['#ff2d2d', '#1a0000', '#ffffff', '#ff7a5a'],
           speedMax: 20, lifeMax: 0.9, sizeMax: 0.3, glow: 1, stretch: 0.9, gravity: 4,
         });
-        this.sprite({ x: p.x, y: p.y, z: z + 1.4, text: '黒閃', color: '#ff2d2d', size: 64, life: 1.1, style: 'flash' });
+        this.sprite({ x: p.x, y: p.y, z: z + 1.4, text: 'BLACK FLASH', color: '#ff2d2d', size: 64, life: 1.1, style: 'flash' });
         this.decal({ x: p.x, y: p.y, r: 3.4, color: '#3a0505', style: 'scorch', alpha: 0.55 });
         break;
       }
@@ -325,7 +325,7 @@ export class Effects {
         break;
       case 'simpleDomainOpen':
         this.ring({ x: p.x, y: p.y, z: 0.05, r: 0.2, target: 2.21, life: 0.5, color: '#a8d8ff', width: 0.14, flat: true });
-        this.sprite({ x: p.x, y: p.y, z: 2.4, text: '簡易領域', color: '#a8d8ff', size: 24, life: 1.0 });
+        this.sprite({ x: p.x, y: p.y, z: 2.4, text: 'SIMPLE DOMAIN', color: '#a8d8ff', size: 24, life: 1.0 });
         break;
       case 'simpleCounter':
         this.arc({ x: p.x, y: p.y, z, angle: rand() * TAU, range: e.radius || 2.21, arc: PI, color: '#cfe8ff', life: 0.2, width: 0.1, style: 'circle' });
@@ -534,11 +534,11 @@ export class Effects {
         break;
       case 'crit':
         this.ring({ x: p.x, y: p.y, z: 1.2, r: 0.2, target: 2.4, life: 0.25, color: '#d8c98a', width: 0.14, flat: false });
-        this.sprite({ x: p.x, y: p.y, z: 2.2, text: '急所', color: '#d8c98a', size: 26, life: 0.6 });
+        this.sprite({ x: p.x, y: p.y, z: 2.2, text: 'CRITICAL', color: '#d8c98a', size: 26, life: 0.6 });
         break;
       case 'adapt':
         this.ring({ x: p.x, y: p.y, z: 1, r: 0.3, target: 3.2, life: 0.7, color: '#c8b06a', width: 0.16, flat: false });
-        this.sprite({ x: p.x, y: p.y, z: 2.6, text: '適応', color: '#c8b06a', size: 34, life: 1.1 });
+        this.sprite({ x: p.x, y: p.y, z: 2.6, text: 'ADAPTED', color: '#c8b06a', size: 34, life: 1.1 });
         break;
       case 'absorb':
         this.burst(p.x, p.y, 1, 18, { color: '#6fd4c4', speedMax: 3, lifeMax: 0.8, gravity: -2 });
@@ -647,7 +647,7 @@ export class Effects {
       case 'word_crush':
       case 'word_explode':
         this.arc({ x: p.x, y: p.y, z: 1.4, angle: e.angle, range: e.range || 10, arc: e.arc || 0.6, color: e.color || '#f0e6c8', life: 0.34, width: 0.3, style: 'sound' });
-        this.sprite({ x: p.x + Math.cos(e.angle || 0) * 2.4, y: p.y + Math.sin(e.angle || 0) * 2.4, z: 2.2, text: e.text || '呪言', color: e.color || '#f0e6c8', size: 30, life: 0.9 });
+        this.sprite({ x: p.x + Math.cos(e.angle || 0) * 2.4, y: p.y + Math.sin(e.angle || 0) * 2.4, z: 2.2, text: e.text || 'CURSED SPEECH', color: e.color || '#f0e6c8', size: 30, life: 0.9 });
         break;
 
       case 'divergent':
@@ -661,7 +661,7 @@ export class Effects {
         break;
       case 'copy':
         this.ring({ x: p.x, y: p.y, z, r: 2.4, target: 0.3, life: 0.4, color: '#b0e8ff', width: 0.12, flat: false });
-        this.sprite({ x: p.x, y: p.y, z: z + 0.6, text: '模倣', color: '#b0e8ff', size: 24, life: 0.8 });
+        this.sprite({ x: p.x, y: p.y, z: z + 0.6, text: 'COPIED', color: '#b0e8ff', size: 24, life: 0.8 });
         break;
       case 'splash':
         this.burst(p.x, p.y, z, 12, { color: '#6fd0e8', speedMax: 5, lifeMax: 0.4, glow: 0.6 });
@@ -676,7 +676,7 @@ export class Effects {
         this.impact(0.9, '#ffd166', true, 0.5);
         this.ring({ x: p.x, y: p.y, z: 0.05, r: 0.3, target: 9, life: 0.8, color: '#ffd166', width: 0.3, flat: true });
         this.burst(p.x, p.y, 0.6, 70, { colors: ['#ffd166', '#ffffff', '#ff9f6b'], speedMax: 14, lifeMax: 1.4, glow: 1, gravity: 5 });
-        this.sprite({ x: p.x, y: p.y, z: z + 1.6, text: '大当たり', color: '#ffd166', size: 52, life: 1.4, style: 'flash' });
+        this.sprite({ x: p.x, y: p.y, z: z + 1.6, text: 'JACKPOT', color: '#ffd166', size: 52, life: 1.4, style: 'flash' });
         break;
       default:
         // Slash family and anything unrecognised: draw a crescent so new

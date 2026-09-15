@@ -26,7 +26,7 @@ export class Hud {
 
   /** The domain expansion announcement: split panels, calligraphy, the chant. */
   showDomainCutin({ jp, en, chant, color, name, glyph }) {
-    this.cutin = { jp, en, chant, color, name, glyph: glyph || '領域展開', t: 2.6, max: 2.6 };
+    this.cutin = { jp, en, chant, color, name, glyph: glyph || 'DOMAIN EXPANSION', t: 2.6, max: 2.6 };
   }
 
   showVersus(left, right) {
@@ -170,7 +170,7 @@ export class Hud {
     const nameW = ctx.measureText(p.name).width;
     ctx.font = `500 11px ${FONT}`;
     ctx.fillStyle = hexA(p.technique?.color || '#ffffff', 0.8);
-    ctx.fillText(p.technique ? `${p.technique.name} · ${p.technique.jp}` : 'No technique', x + nameW + 12, y - 14);
+    ctx.fillText(p.technique ? p.technique.name : 'No technique', x + nameW + 12, y - 14);
 
     // Health.
     bar(ctx, x, y, w, 14, this.hpChip, '#5a1520', 1);
@@ -185,7 +185,7 @@ export class Hud {
       bar(ctx, x, y + 20, w, 11, this.ceSmooth, ceCol, 1, '#9fd8ff');
       ctx.font = `700 10px ${FONT}`;
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillText(`呪力 ${Math.round(p.ce)}`, x + 6, y + 29);
+      ctx.fillText(`CE ${Math.round(p.ce)}`, x + 6, y + 29);
       // Reinforcement read-out: how much damage your energy is eating.
       ctx.textAlign = 'right';
       ctx.fillStyle = 'rgba(255,255,255,0.55)';
@@ -194,7 +194,7 @@ export class Hud {
     } else {
       ctx.font = `700 10px ${FONT}`;
       ctx.fillStyle = 'rgba(220,225,235,0.7)';
-      ctx.fillText('天与呪縛 — no cursed energy', x + 2, y + 29);
+      ctx.fillText('HEAVENLY RESTRICTION — no cursed energy', x + 2, y + 29);
     }
 
     // Flow / domain readiness.
@@ -270,10 +270,10 @@ export class Hud {
         ctx.fillStyle = '#ffffff';
         ctx.fillText(cd.toFixed(1), x + size / 2, y + size / 2 + 5);
       } else {
-        ctx.font = `800 18px ${JP}`;
+        ctx.font = `800 15px ${FONT}`;
         ctx.textAlign = 'center';
         ctx.fillStyle = ready ? (p.technique?.color || '#ffffff') : 'rgba(255,255,255,0.28)';
-        const glyph = (ab.jp || ab.name).slice(0, 2);
+        const glyph = fitText(ctx, shortName(ab.name), size - 6);
         ctx.fillText(glyph, x + size / 2, y + size / 2 + 4);
       }
 
@@ -304,28 +304,28 @@ export class Hud {
     const y = H - 118;
     const items = [
       {
-        key: 'E', label: 'Simple Domain', jp: '簡易領域',
+        key: 'E', label: 'Simple Domain',
         active: p.simpleDomain.active,
         ready: p.maxCe > 0 && p.ce > 12,
         color: '#a8d8ff',
         note: p.simpleDomain.mastered ? 'MASTERED' : '',
       },
       {
-        key: 'Z', label: 'Amplification', jp: '領域展延',
+        key: 'Z', label: 'Amplification',
         active: p.amplify.active,
         ready: p.maxCe > 0 && p.canAfford(30),
         color: '#cfa8ff',
         note: p.amplify.active ? p.amplify.t.toFixed(1) + 's' : '',
       },
       {
-        key: 'R', label: 'Reverse CT', jp: '反転術式',
+        key: 'R', label: 'Reverse CT',
         active: p.state === 'rct',
         ready: p.stats.rct > 0 && !p.flags.noRct && p.ce > 2,
         color: '#8ef0bd',
         note: p.flags.noRct ? 'VOW' : (p.stats.rct <= 0 ? 'N/A' : ''),
       },
       {
-        key: 'X', label: 'Domain Expansion', jp: '領域展開',
+        key: 'X', label: 'Domain Expansion',
         active: !!p.domain,
         ready: p.domainReady(),
         color: p.technique?.domain?.color || '#ffffff',
@@ -430,7 +430,7 @@ export class Hud {
     if (p && p.deadlineTimer != null) {
       ctx.font = `900 20px ${FONT}`;
       ctx.fillStyle = p.deadlineTimer < 20 ? '#ff2d2d' : '#ffd166';
-      ctx.fillText(`束縛 ${p.deadlineTimer.toFixed(1)}`, W / 2, 84);
+      ctx.fillText(`VOW ${p.deadlineTimer.toFixed(1)}`, W / 2, 84);
     }
     ctx.restore();
   }
@@ -460,11 +460,11 @@ export class Hud {
       ctx.font = `800 12px ${FONT}`;
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(`${b.name} — 特級`, W / 2, y + 12);
+      ctx.fillText(`${b.name} — SPECIAL GRADE`, W / 2, y + 12);
       if (b.domain) {
         ctx.font = `700 10px ${FONT}`;
         ctx.fillStyle = '#ff4d4d';
-        ctx.fillText(`領域展開 — barrier ${Math.round(b.domain.integrity)} / ${Math.round(b.domain.maxIntegrity)}`, W / 2, y + 30);
+        ctx.fillText(`DOMAIN — barrier ${Math.round(b.domain.integrity)} / ${Math.round(b.domain.maxIntegrity)}`, W / 2, y + 30);
         y += 16;
       }
       y += 30;
@@ -497,9 +497,9 @@ export class Hud {
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.font = `900 13px ${JP}`;
+      ctx.font = `800 12px ${FONT}`;
       ctx.fillStyle = d.spec.color;
-      ctx.fillText(d.spec.jp, W / 2, y - 2);
+      ctx.fillText(d.spec.name.toUpperCase(), W / 2, y - 2);
       ctx.font = `600 10px ${FONT}`;
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
       ctx.fillText(hostile ? `${d.owner?.name ?? '?'} — ${d.spec.name}` : d.spec.name, W / 2, y + 11);
@@ -542,9 +542,9 @@ export class Hud {
       ctx.fillStyle = 'rgba(6,8,12,0.75)';
       roundRect(ctx, x - 8, y - 16, w + 16, 40, 8);
       ctx.fill();
-      ctx.font = `900 12px ${JP}`;
+      ctx.font = `800 11px ${FONT}`;
       ctx.fillStyle = '#ffffff';
-      ctx.fillText('領域対決  DOMAIN CLASH', W / 2, y - 2);
+      ctx.fillText('DOMAIN CLASH', W / 2, y - 2);
       // Centre-out bar: right is you winning.
       ctx.fillStyle = 'rgba(255,255,255,0.12)';
       roundRect(ctx, x, y + 6, w, 10, 5);
@@ -605,11 +605,11 @@ export class Hud {
       const a = Math.min(inA, outA);
       ctx.globalAlpha = a;
       const yy = H * 0.26 + (1 - inA) * -20;
-      ctx.font = `900 ${Math.round(58 + inA * 6)}px ${JP}`;
+      ctx.font = `900 ${Math.round(34 + inA * 4)}px ${FONT}`;
       ctx.fillStyle = b.color;
       ctx.shadowColor = b.color;
       ctx.shadowBlur = 26;
-      ctx.fillText(b.jp, W / 2, yy);
+      ctx.fillText((b.en || b.jp || '').toUpperCase(), W / 2, yy);
       ctx.shadowBlur = 0;
       ctx.font = `700 16px ${FONT}`;
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
@@ -722,11 +722,11 @@ export class Hud {
     const lines = this.touchMode ? [
       'LEFT half   drag to move',
       'RIGHT half  touch to aim, hold to attack',
-      '術式  1-4   cursed techniques',
-      '防 block   歩 dash   跳 jump   掴 grab',
-      '簡 Simple Domain   増 Amplification',
-      '反 Reverse Cursed Technique',
-      '領 Domain Expansion',
+      '1-4         cursed techniques',
+      'BLK block   DSH dash   JMP jump   GRB grab',
+      'SD  Simple Domain     AMP Amplification',
+      'RCT Reverse Cursed Technique',
+      'DOM Domain Expansion',
       '',
       'BLACK FLASH — land your next hit',
       'while the red band on the ring is lit.',
@@ -816,12 +816,12 @@ export class Hud {
     ctx.translate(W / 2 + push, 0);
     ctx.font = `900 13px ${FONT}`;
     ctx.fillStyle = hexA(c.color, 0.85);
-    ctx.fillText(c.glyph + ' — DOMAIN EXPANSION', 0, cy - bandH * 0.3);
-    ctx.font = `900 ${Math.round(Math.min(72, W * 0.058))}px ${JP}`;
+    ctx.fillText('DOMAIN EXPANSION', 0, cy - bandH * 0.3);
+    ctx.font = `900 ${Math.round(Math.min(46, W * 0.037))}px ${FONT}`;
     ctx.fillStyle = c.color;
     ctx.shadowColor = c.color;
     ctx.shadowBlur = 26;
-    ctx.fillText(c.jp, 0, cy - bandH * 0.02);
+    ctx.fillText((c.en || '').toUpperCase(), 0, cy - bandH * 0.02);
     ctx.shadowBlur = 0;
     ctx.font = `800 18px ${FONT}`;
     ctx.fillStyle = '#ffffff';
@@ -872,7 +872,7 @@ export class Hud {
       ctx.font = `600 11px ${FONT}`;
       ctx.fillStyle = hexA(who.color, 0.9);
       ctx.fillText(who.title, x + 16, y + 44);
-      ctx.font = `600 10px ${JP}`;
+      ctx.font = `600 10px ${FONT}`;
       ctx.fillStyle = 'rgba(255,255,255,0.45)';
       ctx.fillText(who.technique, x + 16, y + 57);
     };
@@ -881,12 +881,12 @@ export class Hud {
     card(1, v.right, H * 0.4 + 10);
 
     ctx.textAlign = 'center';
-    ctx.font = `900 46px ${JP}`;
+    ctx.font = `900 30px ${FONT}`;
     ctx.fillStyle = '#ff2d2d';
     ctx.shadowColor = '#ff2d2d';
     ctx.shadowBlur = 22;
     ctx.globalAlpha = a * clamp01((t - 0.1) * 6);
-    ctx.fillText('対', W / 2, H * 0.4 + 12);
+    ctx.fillText('VS', W / 2, H * 0.4 + 12);
     ctx.restore();
   }
 
@@ -897,11 +897,11 @@ export class Hud {
     ctx.fillStyle = 'rgba(4,5,8,0.78)';
     ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center';
-    ctx.font = `900 72px ${JP}`;
+    ctx.font = `900 46px ${FONT}`;
     ctx.fillStyle = r.victory ? '#8ef0bd' : '#ff4d4d';
     ctx.shadowColor = ctx.fillStyle;
     ctx.shadowBlur = 30;
-    ctx.fillText(r.victory ? '祓除完了' : '敗北', W / 2, H / 2 - 60);
+    ctx.fillText(r.victory ? 'EXORCISM COMPLETE' : 'DEFEAT', W / 2, H / 2 - 60);
     ctx.shadowBlur = 0;
     ctx.font = `700 20px ${FONT}`;
     ctx.fillStyle = '#ffffff';

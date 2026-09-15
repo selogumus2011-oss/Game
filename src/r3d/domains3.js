@@ -748,7 +748,7 @@ const STYLES3 = {
     },
     interior(env) {
       const { dl, cam, S, R, cx, cy, time, open } = env;
-      const WORDS = ['止まれ', '潰れろ', '爆ぜろ', '逃げろ', '眠れ', '動くな'];
+      const WORDS = ['STOP', 'CRUSH', 'BURST', 'FLEE', 'SLEEP', 'FREEZE'];
       // Tablets: each carries a command and turns slowly to face you.
       const tablet = cached('wordTablet', () => {
         const b = new MeshBuilder();
@@ -769,7 +769,7 @@ const STYLES3 = {
         if (p.d > cam.near) {
           const px = Math.max(9, 2.4 * cam.f / p.d);
           dl.text(p.d - 0.2, p.x, p.y, WORDS[i % WORDS.length], '#1a1710',
-            `700 ${px.toFixed(0)}px "Noto Sans JP", system-ui, sans-serif`, open);
+            `800 ${(px * 0.62).toFixed(0)}px system-ui, sans-serif`, open);
         }
       }
       S.alpha = 1;

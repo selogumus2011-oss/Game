@@ -1362,7 +1362,7 @@ export class Renderer {
       const size = s.size * (s.style === 'flash' ? lerp(1.5, 1, a) : 1);
       ctx2.save();
       ctx2.globalAlpha = a;
-      ctx2.font = `900 ${size}px "Noto Sans JP", system-ui, sans-serif`;
+      ctx2.font = `900 ${Math.round(size * 0.62)}px system-ui, sans-serif`;
       ctx2.fillStyle = s.color;
       if (this.quality > 0.5) {
         ctx2.shadowColor = s.color;
@@ -1490,9 +1490,9 @@ export class Renderer {
     if (fall > 0.5) {
       ctx.globalAlpha = clamp01((fall - 0.5) * 3) * (1 - lift);
       ctx.textAlign = 'center';
-      ctx.font = `900 ${Math.round(H * 0.16)}px "Noto Sans JP", system-ui, sans-serif`;
+      ctx.font = `900 ${Math.round(H * 0.075)}px system-ui, sans-serif`;
       ctx.fillStyle = '#b06ae0';
-      ctx.fillText('帳', W / 2, H * 0.52);
+      ctx.fillText('THE VEIL', W / 2, H * 0.52);
       ctx.font = `700 14px system-ui, sans-serif`;
       ctx.fillStyle = 'rgba(255,255,255,0.65)';
       ctx.fillText('THE VEIL DESCENDS', W / 2, H * 0.58);

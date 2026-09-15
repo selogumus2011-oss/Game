@@ -178,7 +178,7 @@ class Game {
           const r = Math.sqrt(Math.random()) * (world.arenaRadius - 6);
           world.spawnPickup(tool, { x: Math.cos(a) * r, y: Math.sin(a) * r });
         }
-        world.banner('死滅回游', 'Culling Game — 8 players', '#cfa8ff', 3);
+        world.banner(null, 'Culling Game — 8 players', '#cfa8ff', 3);
         break;
       }
       case 'training': {
@@ -190,11 +190,11 @@ class Game {
         world.controllers.delete(dummy.id);
         const partner = world.spawnSorcerer('sevenThree', { team: 1, x: 6, y: -8 });
         partner.name = 'Sparring Partner';
-        world.banner('修練', 'Training — learn the Black Flash band', '#8ad8ff', 3);
+        world.banner(null, 'Training — learn the Black Flash band', '#8ad8ff', 3);
         break;
       }
       default: {
-        world.banner('祓除任務', 'Exorcism — survive every wave', '#8ad8ff', 2.6);
+        world.banner(null, 'Exorcism — survive every wave', '#8ad8ff', 2.6);
         break;
       }
     }
@@ -367,7 +367,7 @@ class Game {
       if (!vow) return;
       vow.apply(p, world);
       world.audio('vow', { volume: 1 });
-      world.banner('縛り', vow.name, '#ffd166', 2.2);
+      world.banner(null, vow.name, '#ffd166', 2.2);
       world.fx('buffAura', { pos: { x: p.pos.x, y: p.pos.y }, color: '#ffd166' });
       p.vows.push(vow);
     });
@@ -551,8 +551,8 @@ class Game {
       ctx.fill();
     }
     // Floating glyphs.
-    ctx.font = '900 90px "Noto Sans JP", system-ui, sans-serif';
-    const glyphs = ['呪', '領', '術', '黒', '閃', '縛', '反', '転'];
+    ctx.font = '900 48px system-ui, sans-serif';
+    const glyphs = ['CURSED', 'DOMAIN', 'FLASH', 'VOW', 'REVERSAL', 'BARRIER'];
     for (let i = 0; i < glyphs.length; i++) {
       const x = ((i * 220 + t * 8) % (W + 300)) - 150;
       const y = H * (0.2 + ((i * 37) % 60) / 100);

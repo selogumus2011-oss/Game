@@ -19,7 +19,7 @@
 import { clamp, clamp01, lerp, TAU, PI } from '../core/math.js';
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-const JP = '"Noto Sans JP", system-ui, sans-serif';
+
 
 // Beat boundaries in seconds of real time.
 const SEAL = 0.34;
@@ -195,36 +195,36 @@ export class DomainCinematic {
         ctx.globalAlpha = a;
         // 領域展開 rides in from the left on a slight skew.
         const slide = (1 - k) * -W * 0.5;
-        const big = Math.round(Math.min(86, W * 0.062));
+        const big = Math.round(Math.min(52, W * 0.038));
         ctx.save();
         ctx.translate(W / 2 + slide, H * 0.42);
         ctx.rotate(-0.045);
-        ctx.font = `900 ${big}px ${JP}`;
+        ctx.font = `900 ${big}px ${FONT}`;
         ctx.lineWidth = Math.max(4, big * 0.1);
         ctx.strokeStyle = '#000000';
-        ctx.strokeText('領域展開', 0, 0);
+        ctx.strokeText('DOMAIN EXPANSION', 0, 0);
         ctx.fillStyle = '#ffffff';
-        ctx.fillText('領域展開', 0, 0);
+        ctx.fillText('DOMAIN EXPANSION', 0, 0);
         ctx.restore();
 
         // The domain's own name stamps a beat later, from the right.
         if (t > CHANT + 0.16) {
           const k2 = clamp01((t - CHANT - 0.16) / 0.16);
           const slide2 = (1 - k2) * W * 0.5;
-          const mid = Math.round(Math.min(58, W * 0.042));
+          const mid = Math.round(Math.min(40, W * 0.03));
           ctx.save();
           ctx.globalAlpha = a;
           ctx.translate(W / 2 + slide2, H * 0.42 + big * 0.95);
           ctx.rotate(-0.045);
-          ctx.font = `900 ${mid}px ${JP}`;
+          ctx.font = `900 ${mid}px ${FONT}`;
           ctx.lineWidth = Math.max(3, mid * 0.1);
           ctx.strokeStyle = '#000000';
-          ctx.strokeText(spec.jp, 0, 0);
+          ctx.strokeText(spec.name.toUpperCase(), 0, 0);
           ctx.fillStyle = spec.color;
-          ctx.fillText(spec.jp, 0, 0);
-          ctx.font = `700 ${Math.round(mid * 0.3)}px ${FONT}`;
-          ctx.fillStyle = 'rgba(255,255,255,0.8)';
-          ctx.fillText(spec.name.toUpperCase(), 0, mid * 0.55);
+          ctx.fillText(spec.name.toUpperCase(), 0, 0);
+          ctx.font = `600 ${Math.round(mid * 0.26)}px ${FONT}`;
+          ctx.fillStyle = 'rgba(255,255,255,0.75)';
+          ctx.fillText(spec.blurbShort || 'SURE HIT', 0, mid * 0.55);
           ctx.restore();
         }
         ctx.globalAlpha = 1;

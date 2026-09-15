@@ -332,7 +332,7 @@ function drawSprites3(dl, cam, fx) {
     const px = s.size * cam.f / proj.d * 0.08;
     const rise = (1 - k) * 26;
     dl.text(proj.d - 0.5, proj.x, proj.y - rise, s.text, s.color,
-      `700 ${Math.max(9, px).toFixed(0)}px "Noto Sans JP", system-ui, sans-serif`, k, true);
+      `800 ${Math.max(9, px * 0.62).toFixed(0)}px system-ui, sans-serif`, k, true);
   }
 }
 

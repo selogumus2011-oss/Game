@@ -305,8 +305,8 @@ export function drawDomainOverlay(ctx, cam, d, time, width, height) {
 // Per-domain styles
 // ---------------------------------------------------------------------------
 
-const VOID_GLYPHS = '無量空処領域展開呪力術式反転蒼赫茈０１２３４５６７８９'.split('');
-const WORDS = ['動くな', '止まれ', '潰れろ', '爆ぜろ', '眠れ', '逃げるな'];
+const VOID_GLYPHS = 'INFINITY VOID LIMITLESS BLUE RED PURPLE 0123456789'.split('');
+const WORDS = ['DO NOT MOVE', 'STOP', 'CRUSH', 'BURST', 'SLEEP', 'DO NOT FLEE'];
 
 const STYLES = {
 
@@ -732,7 +732,7 @@ const STYLES = {
   words: {
     floor({ ctx, c, r, time, d }) {
       ctx.globalCompositeOperation = 'lighter';
-      ctx.font = '16px "Noto Sans JP", system-ui, sans-serif';
+      ctx.font = '600 11px system-ui, sans-serif';
       ctx.textAlign = 'center';
       for (let i = 0; i < count(26); i++) {
         const a = i * 1.9 + time * 0.2;

@@ -17,18 +17,18 @@ const DEAD = 0.14;
 
 /** The action each bottom-right button fires, in draw order. */
 const BUTTONS = [
-  { action: 'ability1', label: '1', jp: '壱', ring: 0 },
-  { action: 'ability2', label: '2', jp: '弐', ring: 0 },
-  { action: 'ability3', label: '3', jp: '参', ring: 0 },
-  { action: 'ability4', label: '4', jp: '極', ring: 0, max: true },
-  { action: 'block', label: 'BLK', jp: '防', ring: 1, hold: true },
-  { action: 'dash', label: 'DSH', jp: '歩', ring: 1 },
-  { action: 'jump', label: 'JMP', jp: '跳', ring: 1 },
-  { action: 'grab', label: 'GRB', jp: '掴', ring: 1 },
-  { action: 'domain', label: 'DOM', jp: '領', ring: 2, big: true },
-  { action: 'simpleDomain', label: 'SD', jp: '簡', ring: 2, hold: true },
-  { action: 'amplify', label: 'AMP', jp: '増', ring: 2 },
-  { action: 'rct', label: 'RCT', jp: '反', ring: 2, hold: true },
+  { action: 'ability1', label: '1', ring: 0 },
+  { action: 'ability2', label: '2', ring: 0 },
+  { action: 'ability3', label: '3', ring: 0 },
+  { action: 'ability4', label: '4', ring: 0, max: true },
+  { action: 'block', label: 'BLK', ring: 1, hold: true },
+  { action: 'dash', label: 'DSH', ring: 1 },
+  { action: 'jump', label: 'JMP', ring: 1 },
+  { action: 'grab', label: 'GRB', ring: 1 },
+  { action: 'domain', label: 'DOM', ring: 2, big: true },
+  { action: 'simpleDomain', label: 'SD', ring: 2, hold: true },
+  { action: 'amplify', label: 'AMP', ring: 2 },
+  { action: 'rct', label: 'RCT', ring: 2, hold: true },
 ];
 
 export class TouchControls {
@@ -260,8 +260,8 @@ export class TouchControls {
         down ? hexA(accent, 0.45) : 'rgba(10,12,18,0.46)', alpha);
       ctx.globalAlpha = alpha;
       ctx.fillStyle = down ? '#ffffff' : accent;
-      ctx.font = `700 ${Math.round(b.r * 0.62)}px "Noto Sans JP", system-ui, sans-serif`;
-      ctx.fillText(def.jp, b.x, b.y + 1);
+      ctx.font = `800 ${Math.round(b.r * (def.label.length > 2 ? 0.38 : 0.6))}px system-ui, sans-serif`;
+      ctx.fillText(def.label, b.x, b.y + 1);
       ctx.globalAlpha = 1;
     }
     ctx.restore();
