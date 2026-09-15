@@ -89,7 +89,11 @@ export function drawFighter3(dl, cam, f, time, dt, fx, S, q) {
   const viewModel = !!f.isPlayer && (cam.fpv || 0) > 0.55;
   const L = {
     lod,
-    outlines: q.outlines && lod === 0,
+    // Every character carries a line, near or far. A distant figure losing
+    // its contour is exactly the case where it most needs one to stay
+    // readable against the ground.
+    outlines: q.outlines && lod < 2,
+    inkScale: q.inkScale ?? 1,
     detail: lod === 0 ? q.detail : lod === 1 ? Math.min(1, q.detail) : 0,
     viewModel,
   };
@@ -143,8 +147,16 @@ export function drawFighter3(dl, cam, f, time, dt, fx, S, q) {
 function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
   const Sc = sk.S;
   const build = sk.build;
+  // Character paint sits in a mid-tone, not near-black.
+  //
+  // Cel characters have to read against backgrounds that are themselves dark,
+  // so their base colours are painted lighter than the thing they represent —
+  // a black uniform is painted as a dark blue-grey, not as black. Authored
+  // colours here are the literal ones, so they get lifted into paint range;
+  // without it the new shading lands the whole body in one dark band and the
+  // silhouette dissolves into the floor.
   const skin = a.skin || '#e9c8ac';
-  const uniform = shade(a.uniform || f.color2 || '#171a22', 1.55);
+  const uniform = shade(a.uniform || f.color2 || '#171a22', 2.35);
   const sleeve = shade(uniform, 1.05);
   const trouser = shade(uniform, 0.8);
   const glove = a.accent && f.tool && f.tool.shape !== 'none' ? shade(uniform, 1.3) : skin;
@@ -160,10 +172,11 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
 
   const outline = q.outlines;
   const ink = [8, 8, 12];
-  // `olScale` is now an ink width in pixels, not a hull scale.
+  const inkK = q.inkScale ?? 1;
+  // `olScale` is an ink width in pixels, not a hull scale.
   const emit = (mesh, mat, ol = outline, olScale = 2.4) => {
     drawMesh(dl, cam, mesh, mat, S);
-    if (ol) drawOutline(dl, cam, mesh, mat, 1, ink, olScale);
+    if (ol) drawOutline(dl, cam, mesh, mat, 1, ink, olScale * inkK);
   };
 
   const vm = q.viewModel;
@@ -292,8 +305,9 @@ function drawCurseBody(dl, cam, f, sk, S, q, time) {
   const float = (model.float || 0) * k + (model.float ? Math.sin(t * 1.6) * 0.09 * k : 0);
   const breathe = 1 + Math.sin(t * 2.1) * 0.022;
 
-  const outline = q.outlines && q.detail > 0;
+  const outline = q.outlines;
   const ink = [7, 6, 11];
+  const inkK = q.inkScale ?? 1;
 
   for (let i = 0; i < model.parts.length; i++) {
     const p = model.parts[i];
@@ -357,7 +371,7 @@ function drawCurseBody(dl, cam, f, sk, S, q, time) {
       w * k, w * k, s * k * breathe, tmpMat2);
     matMul(rootMat, tmpMat2, tmpMat);
     drawMesh(dl, cam, p.mesh, tmpMat, S);
-    if (outline) drawOutline(dl, cam, p.mesh, tmpMat, 1, ink, 2.4);
+    if (outline) drawOutline(dl, cam, p.mesh, tmpMat, 1, ink, 2.4 * inkK);
   }
 }
 

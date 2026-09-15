@@ -268,6 +268,16 @@ export function bake(parts) {
 // Rasteriser
 // ---------------------------------------------------------------------------
 
+/**
+ * How far round the silhouette the rim band starts.
+ *
+ * `1 - nz` is 0 for a face pointing straight at the camera and 1 for one
+ * exactly edge-on. On a low-poly body very few triangles are within a fifth of
+ * edge-on, so a tighter threshold than this simply never fires; this catches
+ * the last third of the turn, which on these models is the contour band.
+ */
+const RIM_EDGE = 0.62;
+
 const scratch = { x: new Float32Array(4096), y: new Float32Array(4096), z: new Float32Array(4096) };
 const poly = new Float32Array(8);
 
@@ -376,10 +386,14 @@ export function drawMesh(dl, cam, mesh, mat, opts) {
       nx /= len; ny /= len; nz /= len;
       if (nz < 0) { nx = -nx; ny = -ny; nz = -nz; }   // face the camera
       const d = nx * L.x + ny * L.y + nz * L.z;
-      const rim = 1 - nz;
-      light = ambient + keyI * Math.max(0, d) + rimI * rim * rim;
+      light = ambient + keyI * Math.max(0, d);
+      // Rim is a painted shape, not a falloff. A smooth `rim * rim` term slides
+      // a surface through the bands as it curves away, which is a gradient by
+      // another name; a hard test snaps the edge into the rim band and leaves
+      // everything inside it alone, which is how the edge is actually painted.
+      if (rimI > 0 && 1 - nz > RIM_EDGE) light += rimI * 1.7;
       const em = mesh.emis[i];
-      if (em) light = lerp(light, 1.3, em);
+      if (em) light = lerp(light, 1.45, em);
     }
 
     const a = alpha;

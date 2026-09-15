@@ -393,31 +393,48 @@ export class Camera3 {
 // ---------------------------------------------------------------------------
 
 /**
- * Cel shading, animation-style: a hard terminator and four bands, not a ramp.
+ * Cel shading the way a painted cel is actually built.
  *
- * Cel animation paints a surface in two or three flat tones with a sharp line
- * between them, and the shadow is not merely the base colour turned down — it
- * is cooled and slightly desaturated, which is what makes painted shadow read
- * as shadow rather than as dimness. The bands below do exactly that, and the
- * result is cached because a frame asks for this thousands of times.
+ * The important idea, and the one this originally got backwards: in cel
+ * animation the **authored colour is the lit colour**. A character's base paint
+ * is what you see across the whole lit side of them, flat, with no gradient in
+ * it at all. Shadow is a second flat tone painted into it along a hard line,
+ * and there is usually nothing brighter than base except a rim.
+ *
+ * The old table treated base as a narrow middle band between "shadow" and
+ * "lit", so almost no surface ever landed on the colour that was authored: a
+ * lit face came out warm-tinted, a turned one came out dim, and the run of
+ * values between them read as a soft gradient — which is exactly what makes
+ * 3D look like 3D. Now the lit band is wide and sits on 1.0, so most of a
+ * character is their own flat colour and the shadow is an accent shape.
+ *
+ * Shadow is not merely darker. It is pushed hard toward blue-violet and pulled
+ * down in red, because painted shadow reads as shadow through hue, not through
+ * brightness. Turning a colour down alone reads as the lights failing.
  */
 const colorCache = new Map();
 
 // [multiplier, red tint, green tint, blue tint] per band, darkest first.
 const BANDS = [
-  [0.60, 0.88, 0.93, 1.16],   // core shadow: cool, and still readable
-  [0.80, 0.94, 0.97, 1.09],   // shadow
-  [1.00, 1.00, 1.00, 1.00],   // base — the authored colour, flat
-  [1.22, 1.05, 1.02, 0.96],   // lit: warm
-  [1.52, 1.10, 1.06, 0.97],   // rim / specular
+  [0.52, 0.74, 0.82, 1.30],   // core shadow: deep, strongly violet
+  [0.74, 0.86, 0.92, 1.18],   // shadow: the second paint tone
+  [1.00, 1.00, 1.00, 1.00],   // base — the authored colour, and most of the lit side
+  [1.16, 1.04, 1.02, 0.97],   // a slight lift where the key is straight on
+  [1.70, 1.14, 1.10, 1.04],   // rim: a painted edge, not a falloff
 ];
 
-/** Which band a lighting value falls into. The first cut is the terminator. */
+/**
+ * Which band a lighting value falls into.
+ *
+ * The cuts are deliberately uneven. The first is the terminator and wants to be
+ * crisp; the base band is wide so a lit surface stays flat across its whole
+ * area rather than drifting a band as it curves.
+ */
 function bandOf(light) {
-  if (light < 0.46) return 0;
-  if (light < 0.72) return 1;
-  if (light < 0.98) return 2;
-  if (light < 1.22) return 3;
+  if (light < 0.56) return 0;
+  if (light < 0.80) return 1;
+  if (light < 1.14) return 2;
+  if (light < 1.36) return 3;
   return 4;
 }
 

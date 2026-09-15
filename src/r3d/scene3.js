@@ -57,7 +57,7 @@ export class Renderer3D {
     };
     this.quality = 1;
     this._fpsAvg = 60;
-    this.q = { outlines: true, detail: 2 };
+    this.q = { outlines: true, inkScale: 1, detail: 2 };
     // View-space key light: over the camera's left shoulder and slightly down.
     this.light = { x: -0.44, y: 0.62, z: 0.65 };
     this.shadeOpts = makeShade(this.light);
@@ -78,12 +78,27 @@ export class Renderer3D {
     this._makeVignette();
   }
 
+  /**
+   * Shed work when the frame is struggling.
+   *
+   * The ink outline is never what gets shed. It used to be the first thing to
+   * go, which meant that on any machine under about 32fps the game quietly
+   * stopped being cel-shaded at all — not a lower-fidelity version of the art
+   * direction but a different one, flat-shaded low-poly 3D. Fidelity is a
+   * dial; the line is the drawing. Particles, level of detail, domain
+   * tessellation and the mote field all give up far more milliseconds per unit
+   * of damage done to the look.
+   *
+   * At the lowest tier the line gets thinner rather than absent, since the
+   * outline pass costs roughly what its width costs in fill.
+   */
   autoQuality(fps) {
     this._fpsAvg = this._fpsAvg * 0.92 + fps * 0.08;
     const q = this._fpsAvg < 32 ? 0.35 : this._fpsAvg < 44 ? 0.7 : 1;
     if (q !== this.quality) {
       this.quality = q;
-      this.q.outlines = q > 0.5;
+      this.q.outlines = true;
+      this.q.inkScale = q > 0.5 ? 1 : 0.7;
       this.q.detail = q > 0.8 ? 2 : q > 0.5 ? 1 : 0;
       setDomainQuality3(q);
     }
@@ -150,8 +165,12 @@ export class Renderer3D {
     S.light = this.light;
     // Most surfaces should land on the lit side of the terminator; the shadow
     // band is an accent, not the default state of the world.
-    S.ambient = 0.62;
-    S.key = 0.46;
+    // Chosen so a surface facing the key lands exactly on 1.0 — the authored
+    // colour, flat — and one facing away lands in the deep shadow band. The
+    // numbers are the whole cel look: get them wrong and every surface sits
+    // between two bands and reads as a gradient.
+    S.ambient = 0.42;
+    S.key = 0.58;
     S.rim = 0.34;
 
     // The haze the distance blends toward. It matches the horizon band of the
