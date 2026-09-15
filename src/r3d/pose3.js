@@ -16,6 +16,58 @@ const ACTION_MODE = {
   clawSwipe: 'claw', bite: 'lunge', lunge: 'palm', stomp: 'slam', tailWhip: 'spin',
 };
 
+// ---------------------------------------------------------------------------
+// Animating on twos
+// ---------------------------------------------------------------------------
+//
+// Television animation is not drawn at 24 frames a second. It is drawn at
+// twelve, or eight, with each drawing held for two or three frames — "on twos"
+// and "on threes" — and that hold is most of what the eye reads as animation
+// rather than as simulation. A rig interpolated smoothly at sixty is doing
+// something no animator has ever done, and it is the single loudest tell that
+// a thing is a game and not a cartoon.
+//
+// So the pose clock is quantised. The rate is not constant, because the show's
+// is not either: an idle or a walk sits on threes, a wind-up holds, the strike
+// itself is one or two frames and gets no quantisation at all so it lands
+// crisp, and the recovery settles on twos.
+//
+// Only the *pose* is stepped. The root — where the character actually stands —
+// stays smooth, because a fighting game that steps your position feels like
+// input lag rather than like animation. This is the same split Into the
+// Spider-Verse uses: characters on twos, camera on ones.
+
+const ON_THREES = 1 / 8;
+const ON_TWOS = 1 / 12;
+const ON_ONES = 0;              // no hold: every frame is its own drawing
+
+/** Hold length for a fighter right now, in seconds. */
+function poseStep(f) {
+  if (f.state === 'attack' && f.action) {
+    const a = f.action;
+    const d = a.def;
+    if (a.t < d.startup) return ON_THREES;                 // the wind-up holds
+    if (a.t < d.startup + d.active) return ON_ONES;        // the strike is snap
+    return ON_TWOS;                                        // settling
+  }
+  if (f.state === 'cast' || f.state === 'domainCast') return ON_THREES;
+  if (f.state === 'stagger' || f.state === 'knockdown') return ON_TWOS;
+  if (f.dead) return ON_TWOS;
+  return ON_THREES;
+}
+
+/**
+ * Which drawing we are on.
+ *
+ * Aligned to a global grid rather than to each fighter's own start time, so
+ * everyone in the shot steps together — an animated cut holds every element on
+ * the same beat, and characters stepping out of phase with each other reads as
+ * a glitch rather than as animation.
+ */
+function drawingIndex(time, step) {
+  return step > 0 ? Math.floor(time / step) : -1;
+}
+
 const easeOut = (t) => 1 - Math.pow(1 - clamp01(t), 3);
 const easeIn = (t) => Math.pow(clamp01(t), 2.2);
 const V = (x, y, z) => ({ x, y, z });
@@ -30,6 +82,7 @@ export function rig3(f) {
       squash: 1, squashV: 0,
       prevVz: 0, wasAir: false,
       lastStep: 0, blink: 0, blinkT: 1 + (f.id % 7) * 0.5,
+      sk: null, skIdx: -1,   // the held drawing and which one it is
       trail: [],
     };
   }
@@ -109,6 +162,18 @@ export function updateRig3(f, dt, fx) {
  */
 export function pose3(f, time) {
   const r = rig3(f);
+
+  // Hold the finished drawing rather than quantising the inputs that make it.
+  //
+  // Quantising inputs was the obvious approach and it does not work: the rig's
+  // springs — squash, recoil, hair, coat — are integrated every frame and feed
+  // the pose too, so the skeleton comes out different sixty times a second
+  // however carefully the clocks are stepped. A drawing is the whole pose, so
+  // the whole pose is what gets held.
+  const step = poseStep(f);
+  const idx = drawingIndex(time, step);
+  if (idx >= 0 && r.skIdx === idx && r.sk) return r.sk;
+
   const S = (f.height || 1.75) / 1.75;
   const build = (f.appearance?.build ?? 1);
 
@@ -325,5 +390,8 @@ export function pose3(f, time) {
   // The lead hand carries the tool.
   sk.weaponHand = sk.hR;
   sk.weaponElbow = sk.eR;
+
+  r.sk = sk;
+  r.skIdx = idx;
   return sk;
 }
