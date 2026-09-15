@@ -462,8 +462,10 @@ function inkEdges(mesh) {
     if (found === undefined) { at.set(key, i); canon[i] = i; } else canon[i] = found;
   }
 
-  // Model-space face normals, for the dihedral test.
+  // Model-space face normals, for the dihedral test, and face areas, for the
+  // detail test below.
   const nx = new Float32Array(nf), ny = new Float32Array(nf), nz = new Float32Array(nf);
+  const area = new Float32Array(nf);
   const faces = mesh.f;
   for (let i = 0; i < nf; i++) {
     const a = faces[i * 3] * 3, b = faces[i * 3 + 1] * 3, c = faces[i * 3 + 2] * 3;
@@ -474,10 +476,22 @@ function inkEdges(mesh) {
     let z = e1x * e2y - e1y * e2x;
     const L = Math.hypot(x, y, z) || 1;
     nx[i] = x / L; ny[i] = y / L; nz[i] = z / L;
+    area[i] = L * 0.5;
   }
 
   // Collect edges by their welded endpoint pair, keeping the two faces.
   const minLen = (mesh.radius || 1) * 0.055;
+  // Detail plates do not get outlined.
+  //
+  // A face is assembled from a dozen thin boxes laid on the front of the
+  // skull — eye whites, irises, pupils, highlights, lash lines, brows, clan
+  // markings — and every one of them is a box, so every one of them has a
+  // 90-degree crease all the way round it. The interior pass was drawing a
+  // rectangle around each, which turned a face into a panel of framed windows
+  // and was most of why the characters looked built rather than drawn. An
+  // edge earns a line only if both the faces it joins are large enough to be
+  // part of the form; a sliver the thickness of a decal is not.
+  const minArea = (mesh.radius || 1) * (mesh.radius || 1) * 0.018;
   const seen = new Map();
   const out = [];
   for (let i = 0; i < nf; i++) {
@@ -495,6 +509,7 @@ function inkEdges(mesh) {
       const ca = mesh.fc[fa], cb = mesh.fc[fb];
       const material = ca[0] !== cb[0] || ca[1] !== cb[1] || ca[2] !== cb[2];
       if (dot >= CREASE_COS && !material) continue;
+      if (area[fa] < minArea || area[fb] < minArea) continue;
       // Drop edges that are tiny relative to the whole model. They are
       // sub-pixel at any distance you would actually see the model from, and
       // the per-frame test that proves it costs two projections each — which,

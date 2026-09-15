@@ -31,7 +31,16 @@ const tmpMat2 = new Float32Array(16);
 const V = (x, y, z) => ({ x, y, z });
 
 // Cached unit meshes reused across every fighter.
-const limbUnit = (c) => cached(`limbU:${c}`, () => taperedBox(1, 0.86, 0.8, 0.7, 1, c));
+// Limb profiles. These used to be one shape used four times, which is why the
+// legs read as two rectangles with a seam across them: a thigh that ends as
+// wide as the shin begins has no knee, and a shin that ends as wide as it
+// starts has no ankle for the foot to sit on. Each segment now tapers the way
+// the limb it stands for does — hard into the knee, hard into the ankle and
+// the wrist, with the calf and the elbow left a touch proud of the joint above
+// them so the break reads.
+const limbUnit = (c) => cached(`limbU:${c}`, () => taperedBox(1, 0.9, 0.66, 0.6, 1, c));
+const thighUnit = (c) => cached(`thighU:${c}`, () => taperedBox(1, 0.92, 0.74, 0.68, 1, c));
+const shinUnit = (c) => cached(`shinU:${c}`, () => taperedBox(1, 0.95, 0.56, 0.5, 1, c));
 const armUnit = (c) => cached(`armU:${c}`, () => taperedBox(1, 0.9, 0.82, 0.74, 1, c));
 const handUnit = (c) => cached(`handU:${c}`, () => taperedBox(1, 1.1, 0.8, 0.9, 1, c));
 const footUnit = (c) => cached(`footU:${c}`, () => taperedBox(1, 0.8, 0.9, 0.75, 1, c, {
@@ -179,7 +188,11 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
   const uniform = paintTone(a.uniform || f.color2 || '#171a22', UNIFORM_TONE);
   const sleeve = shade(uniform, 1.05);
   const trouser = shade(uniform, 0.8);
-  const glove = a.accent && f.tool && f.tool.shape !== 'none' ? shade(uniform, 1.3) : skin;
+  // Gloves when a weapon is being carried, but a shade off the uniform rather
+  // than well above it — at 1.3 they came out as the brightest thing on the
+  // whole figure, so a fighter read as two white blocks floating at the ends
+  // of their arms.
+  const glove = a.accent && f.tool && f.tool.shape !== 'none' ? shade(uniform, 1.12) : skin;
 
   // Upper body twist.
   const tw = sk.twist;
@@ -207,8 +220,8 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
   const shinW = LIMB_W.shin * Sc * build;
   for (const k of vm ? [] : ['L', 'R']) {
     const hip = sk['hip' + k], knee = sk['k' + k], foot = sk['f' + k];
-    emit(limbUnit(trouser), boneTransform(rootMat, hip, knee, thighW, tmpMat));
-    emit(limbUnit(trouser), boneTransform(rootMat, knee, foot, shinW, tmpMat));
+    emit(thighUnit(trouser), boneTransform(rootMat, hip, knee, thighW, tmpMat));
+    emit(shinUnit(trouser), boneTransform(rootMat, knee, foot, shinW, tmpMat));
     if (q.lod === 2) continue;
     // Foot: a flat box pointing forward.
     matCompose(foot.x + 0.045 * Sc, foot.y, foot.z, 0, 0, 0,

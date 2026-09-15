@@ -107,6 +107,10 @@ const shots = [
   ['04-face', { yaw: Math.PI / 2, pitch: 0.05, dist: 1.9, lz: 1.62, facing: -Math.PI / 2 }],
   ['05-swing', { yaw: -Math.PI / 2 + 0.7, pitch: 0.1, dist: 3.4, lz: 1.35, action: 'heavy', actionAt: 1.0 }],
   ['06-low', { yaw: -Math.PI / 2 + 0.3, pitch: -0.14, dist: 4.2, lz: 1.0 }],
+  // Close enough to judge the face itself. Everything above this is a read of
+  // the silhouette; the eyes and the nose only resolve here.
+  ['07-head', { yaw: Math.PI / 2, pitch: 0.02, dist: 0.85, lz: 1.66, facing: -Math.PI / 2 }],
+  ['08-head34', { yaw: Math.PI / 2 - 0.7, pitch: 0.04, dist: 0.9, lz: 1.66, facing: -Math.PI / 2 }],
 ];
 
 for (const [name, o] of shots) {

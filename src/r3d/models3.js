@@ -177,22 +177,52 @@ function headMesh(a, opts = {}) {
     const hairDark = shade(hair, 0.72);
     const hairLit = shade(hair, 1.18);
 
-    // Skull: a rounded box, slightly deeper than wide, chin tapering forward.
-    b.merge(taperedBox(0.145, 0.155, 0.17, 0.165, 0.11, skin, {
+    // Skull.
+    //
+    // A head that is a box reads as a box however well it is shaded, and this
+    // one was 0.17 deep by 0.165 wide by 0.22 tall with about eight degrees of
+    // draft on it: a cube with the corners knocked off, which is what it
+    // looked like. A drawn head is a wedge — widest across the cheekbones,
+    // narrowing hard into the chin, rounding off above the ear — so it is
+    // built here as four levels up that profile rather than one block.
+    //
+    // The front face slopes with them. A chin that sits as far forward as the
+    // brow has no profile at all, and the profile is most of what tells you
+    // which way a head is facing.
+    const JAW = 0.052, CHEEK = 0.120, TEMPLE = 0.192, CROWN = 0.238;
+    b.merge(taperedBox(0.130, 0.108, 0.150, 0.150, JAW, skin, {
       topColor: skin, bottomColor: dark,
-    }), matCompose(0.004, 0, 0.055, 0, 0, 0));
-    // Cranium cap.
-    b.merge(taperedBox(0.17, 0.165, 0.11, 0.115, 0.055, skin, { topColor: skin }),
-      matCompose(0, 0, 0.165, 0, 0, 0));
-    // Jaw / chin wedge.
-    b.merge(prism([[-0.07, -0.07], [0.082, -0.05], [0.082, 0.05], [-0.07, 0.07]], 0.06, dark, {
-      topColor: skin,
-    }), matCompose(0.008, 0, 0, 0, 0, 0));
-    // Neck.
-    b.merge(cylinder(0.052, 0.05, 0.07, 6, dark), matCompose(-0.01, 0, -0.07, 0, 0, 0));
-    // Ears.
+    }), matCompose(0.004, 0, 0, 0, 0, 0));
+    b.merge(taperedBox(0.150, 0.150, 0.168, 0.172, CHEEK - JAW, skin, { topColor: skin }),
+      matCompose(0.001, 0, JAW, 0, 0, 0));
+    b.merge(taperedBox(0.168, 0.172, 0.170, 0.164, TEMPLE - CHEEK, skin, { topColor: skin }),
+      matCompose(0, 0, CHEEK, 0, 0, 0));
+    b.merge(taperedBox(0.170, 0.164, 0.106, 0.108, CROWN - TEMPLE, skin, { topColor: skin }),
+      matCompose(-0.002, 0, TEMPLE, 0, 0, 0));
+
+    // The nose.
+    //
+    // Mostly a mark rather than a shape. A full nose modelled at this budget
+    // is four facets big enough to catch the key on their own, and it came out
+    // as a bright metal strip down the middle of the face. Drawn faces do it
+    // the other way round: a short ridge you only notice in profile, and on
+    // the front a single dark tick down its shadow side. The tick is what
+    // reads; the ridge is what stops the profile being a plank.
+    if (!opts.curse) {
+      b.merge(prism([[0, -0.009], [0.013, 0], [0, 0.009]], 0.030, dark),
+        matCompose(0.070, 0, 0.068, 0, 0, 0));
+      b.merge(box(0.008, 0.007, 0.024, shadeCool(skin, 0.66), { z0: -0.012 }),
+        matCompose(0.0755, 0.012, 0.081, 0, 0, 0));
+    }
+
+    // Neck. Under the jaw and in its shadow, so it is the darkest skin on the
+    // model — lit at face tone it reads as a bright post holding up a head.
+    // Flared at the base to meet the shoulders without a seam.
+    b.merge(cylinder(0.064, 0.047, 0.07, 6, shadeCool(skin, 0.46)),
+      matCompose(-0.012, 0, -0.07, 0, 0, 0));
+    // Ears, level with the cheekbones where they belong.
     for (const s of [1, -1]) {
-      b.merge(box(0.018, 0.05, 0.07, dark), matCompose(-0.015, s * 0.082, 0.055, 0, 0, 0));
+      b.merge(box(0.017, 0.042, 0.062, dark), matCompose(-0.012, s * 0.083, 0.095, 0, 0, 0));
     }
 
     // The shadow the fringe casts across the brow.
@@ -203,16 +233,21 @@ function headMesh(a, opts = {}) {
     // reads as painted rather than as a band. Without it a face is a blank
     // light shape and no amount of correct shading elsewhere fixes it.
     if (!opts.curse) {
-      const brow = shadeCool(skin, 0.68);
+      // One step down from skin, not three. At 0.68 it came out as a pale
+      // headband with a hard edge across the brow; a cast shadow is a change
+      // of tone, not a different material.
+      const brow = shadeCool(skin, 0.80);
       // Two overlapping plates: the upper one full width, the lower one
       // narrower and offset, which gives the edge a break in it.
-      b.merge(box(0.01, 0.175, 0.052, brow, { z0: -0.006 }),
-        matCompose(0.0855, 0, 0.168, 0, 0, 0));
-      b.merge(box(0.01, 0.105, 0.03, brow, { z0: -0.006 }),
-        matCompose(0.0855, -0.022, 0.146, 0, 0, 0));
-      // And the one under the jaw, which is what gives a chin its shape.
-      b.merge(box(0.01, 0.12, 0.022, brow, { z0: -0.006 }),
-        matCompose(0.079, 0, 0.055, 0, 0, 0));
+      b.merge(box(0.01, 0.16, 0.048, brow, { z0: -0.006 }),
+        matCompose(0.0855, 0, 0.172, 0, 0, 0));
+      b.merge(box(0.01, 0.095, 0.028, brow, { z0: -0.006 }),
+        matCompose(0.0855, -0.024, 0.15, 0, 0, 0));
+      // The plane under the cheekbone, which is what gives a jaw its shape.
+      for (const s of [1, -1]) {
+        b.merge(box(0.009, 0.026, 0.034, brow, { z0: -0.017 }),
+          matCompose(0.0735, s * 0.064, 0.086, 0, 0, 0));
+      }
     }
 
     // Eyes.
@@ -235,26 +270,44 @@ function headMesh(a, opts = {}) {
     if (!a.blindfold && !opts.curse) {
       const lash = shade(hair, 0.55);
       for (const s of [1, -1]) {
-        const ey = s * 0.047;
-        // Sclera: wider and much taller than before.
-        b.merge(box(0.012, 0.064, 0.044, '#f7f6f8', { z0: -0.022 }),
+        const ey = s * 0.045;
+        // Sclera, as three stacked bands rather than one rectangle. A drawn
+        // eye is a lens; a rectangular one reads as a visor, which is exactly
+        // what these looked like — two red windows behind a dark bar. The
+        // bands narrow above and below and shift outboard as they rise, so the
+        // outer corner sits higher than the inner one the way a drawn eye's
+        // does.
+        //
+        // And they are big: an eye a fifth of the face across is a human
+        // proportion, and at that size every small mark nearby — a lash, a
+        // brow, a clan marking — competes with it on equal terms and the whole
+        // face reads as a panel of bars. Drawn eyes take a third of the width
+        // and settle the argument.
+        b.merge(box(0.012, 0.042, 0.015, '#f7f6f8', { z0: 0.013 }),
+          matCompose(0.0815, ey + s * 0.008, 0.112, 0, 0, 0));
+        b.merge(box(0.012, 0.066, 0.026, '#f7f6f8', { z0: -0.013 }),
           matCompose(0.0815, ey, 0.112, 0, 0, 0));
-        // Iris, tall.
-        b.merge(box(0.013, 0.034, 0.036, eyes, { z0: -0.018 }),
-          matCompose(0.0845, ey, 0.112, 0, 0, 0));
+        b.merge(box(0.012, 0.048, 0.013, '#f7f6f8', { z0: -0.026 }),
+          matCompose(0.0815, ey - s * 0.005, 0.112, 0, 0, 0));
+        // Iris. Narrow enough that white shows at both corners — filling the
+        // opening with colour is what made these read as two lit panels rather
+        // than as eyes.
+        b.merge(box(0.013, 0.030, 0.040, eyes, { z0: -0.021 }),
+          matCompose(0.0845, ey, 0.110, 0, 0, 0));
         // Pupil.
-        b.merge(box(0.014, 0.016, 0.019, shade(eyes, 0.34), { z0: -0.0095 }),
-          matCompose(0.0862, ey, 0.112, 0, 0, 0));
+        b.merge(box(0.014, 0.013, 0.020, shade(eyes, 0.34), { z0: -0.010 }),
+          matCompose(0.0862, ey, 0.110, 0, 0, 0));
         // Highlight, up and inboard — the same corner on both eyes, because a
         // highlight comes from a light and lights do not mirror.
-        b.merge(box(0.015, 0.011, 0.012, '#ffffff', { z0: -0.006 }),
-          matCompose(0.0872, ey - 0.011, 0.126, 0, 0, 0));
-        // Lash line across the top, heaviest mark on the face.
-        b.merge(box(0.016, 0.07, 0.013, lash, { z0: -0.0065 }),
-          matCompose(0.0855, ey, 0.133, 0, 0, 0));
-        // Brow above it.
-        b.merge(box(0.012, 0.058, 0.011, hairDark, { z0: -0.0055 }),
-          matCompose(0.0835, ey, 0.152, 0, -0.22 * s, 0));
+        b.merge(box(0.015, 0.012, 0.013, '#ffffff', { z0: -0.0065 }),
+          matCompose(0.0872, ey - 0.010, 0.123, 0, 0, 0));
+        // Lash line across the top: the heaviest mark on the face, but a line
+        // and not a bar. At 0.012 deep it sat over the eye like a shutter.
+        b.merge(box(0.016, 0.062, 0.009, lash, { z0: -0.0045 }),
+          matCompose(0.0855, ey + s * 0.003, 0.1395, 0, 0, 0));
+        // Brow above it, thin and clear of the lid.
+        b.merge(box(0.012, 0.05, 0.009, hairDark, { z0: -0.0045 }),
+          matCompose(0.0835, ey, 0.158, 0, -0.22 * s, 0));
       }
     } else if (a.blindfold) {
       // The blindfold wraps the whole upper face and knots at the back.
@@ -266,16 +319,21 @@ function headMesh(a, opts = {}) {
         matCompose(-0.105, 0.02, 0.1, 0, 0, 0.5));
     }
 
-    // Mouth line.
-    b.merge(box(0.01, 0.042, 0.008, shade(skin, 0.6), { z0: -0.004 }),
-      matCompose(0.086, 0, 0.032, 0, 0, 0));
+    // Mouth. A line, not a slab: at 0.042 across in mid-grey it read as a
+    // letterbox slot halfway down the chin. Short, dark, and up under the nose
+    // where a mouth goes.
+    b.merge(box(0.009, 0.026, 0.006, shade(skin, 0.44), { z0: -0.003 }),
+      matCompose(0.0765, 0, 0.048, 0, 0, 0));
 
+    // Clan markings. Pushed out to the temple and down onto the cheekbone: at
+    // the old spacing they landed on the outer corner of each eye and read as
+    // part of it, which turned a pair of eyes into a pair of bolted panels.
     if (a.markings) {
       for (const s of [1, -1]) {
-        b.merge(box(0.008, 0.012, 0.03, '#2a1414', { z0: -0.015 }),
-          matCompose(0.086, s * 0.03, 0.155, 0, 0, 0));
-        b.merge(box(0.008, 0.012, 0.024, '#2a1414', { z0: -0.012 }),
-          matCompose(0.08, s * 0.07, 0.09, 0, 0, 0));
+        b.merge(box(0.008, 0.011, 0.026, '#2a1414', { z0: -0.013 }),
+          matCompose(0.0855, s * 0.021, 0.172, 0, 0, 0));
+        b.merge(box(0.008, 0.010, 0.022, '#2a1414', { z0: -0.011 }),
+          matCompose(0.077, s * 0.079, 0.072, 0, 0, 0));
       }
     }
     if (a.stitches) {
@@ -286,9 +344,29 @@ function headMesh(a, opts = {}) {
     }
 
     // --- hair ---------------------------------------------------------------
-    const cap = (h, tone) => b.merge(taperedBox(0.185, 0.18, 0.13, 0.13, h, tone, {
-      topColor: hairLit,
-    }), matCompose(-0.004, 0, 0.16, 0, 0, 0));
+    /**
+     * The cap.
+     *
+     * One box sitting on top of the skull gives its bottom edge as a level
+     * ring all the way round the head, and a level ring of hair is a helmet —
+     * which is what every one of these read as. Hair does not end at one
+     * height: it comes down the back of the skull past the ears, drops in
+     * front of them at the temples, and is pushed up at the brow by whatever
+     * fringe hangs there. Three pieces instead of one, so the hairline is a
+     * shape rather than a line.
+     */
+    const cap = (h, tone) => {
+      b.merge(taperedBox(0.186, 0.182, 0.13, 0.132, h, tone, { topColor: hairLit }),
+        matCompose(-0.004, 0, 0.158, 0, 0, 0));
+      // Down the back of the skull.
+      b.merge(taperedBox(0.09, 0.168, 0.078, 0.14, 0.12, shade(tone, 0.84)),
+        matCompose(-0.056, 0, 0.06, 0, 0, 0));
+      // In front of the ears.
+      for (const s of [1, -1]) {
+        b.merge(taperedBox(0.10, 0.028, 0.055, 0.022, 0.10, tone),
+          matCompose(0.026, s * 0.081, 0.086, 0, 0, 0));
+      }
+    };
 
     /**
      * The fringe.
@@ -374,12 +452,16 @@ function headMesh(a, opts = {}) {
       case 'spiky':
       default:
         cap(0.085, hair);
-        for (let i = 0; i < 13; i++) {
-          const ang = (i / 13) * TAU;
-          const r = 0.082;
-          b.merge(cone(0.036, 0.13 + (i % 4) * 0.045, 4, i % 2 ? hairLit : hair),
-            matCompose(Math.cos(ang) * r - 0.005, Math.sin(ang) * r, 0.225,
-              0, 0.5 + (i % 3) * 0.28, ang));
+        // Nine clumps rather than thirteen, of four different lengths, all
+        // leaning back off the crown. Evenly spaced spikes of one length
+        // radiating from a ring is a crown, not a head of hair — the
+        // unevenness is the whole trick.
+        for (let i = 0; i < 9; i++) {
+          const ang = (i / 9) * TAU + 0.3;
+          const r = 0.07 + (i % 3) * 0.014;
+          b.merge(cone(0.038, 0.115 + (i % 4) * 0.055, 4, i % 2 ? hairLit : hair),
+            matCompose(Math.cos(ang) * r - 0.012, Math.sin(ang) * r, 0.215 + (i % 2) * 0.012,
+              0, 0.62 + (i % 3) * 0.3, ang));
         }
         // The fringe: three heavier locks falling forward over the brow.
         for (let i = -1; i <= 1; i++) {
@@ -475,14 +557,14 @@ function torsoMesh(a, f) {
 
     // Waist, cinched. A straight tube reads as a mannequin; the taper in and
     // then out again is most of what makes a silhouette look like a person.
-    b.merge(taperedBox(0.27, 0.37, 0.235, 0.325, 0.26, dark), matCompose(0, 0, 0, 0, 0, 0));
+    b.merge(taperedBox(0.26, 0.345, 0.225, 0.30, 0.26, dark), matCompose(0, 0, 0, 0, 0, 0));
     // Hem: the jacket has a bottom edge, and it is a different tone so the
     // line finder inks it.
-    b.merge(taperedBox(0.285, 0.385, 0.275, 0.375, 0.045, deep), matCompose(0, 0, 0.255, 0, 0, 0));
+    b.merge(taperedBox(0.275, 0.355, 0.265, 0.345, 0.045, deep), matCompose(0, 0, 0.255, 0, 0, 0));
     // Ribcage, flaring to the shoulders — but not as far as it was. A chest
     // that keeps widening to the very top gives the figure a flat shelf to
     // hang the arms off, which reads as a sandwich board.
-    b.merge(taperedBox(0.24, 0.33, 0.30, 0.40, 0.53, uniform, {
+    b.merge(taperedBox(0.23, 0.305, 0.305, 0.425, 0.53, uniform, {
       sideColor: uniform, rightColor: lit, leftColor: dark,
     }), matCompose(0, 0, 0.3, 0, 0, 0));
 
@@ -503,7 +585,7 @@ function torsoMesh(a, f) {
 
     // Shoulder yoke, tapering in as it rises so the top of the torso is a
     // slope into the neck rather than a plate.
-    b.merge(taperedBox(0.30, 0.40, 0.235, 0.30, 0.075, lit), matCompose(0, 0, 0.83, 0, 0, 0));
+    b.merge(taperedBox(0.305, 0.425, 0.235, 0.30, 0.075, lit), matCompose(0, 0, 0.83, 0, 0, 0));
 
     // Deltoid caps: the shoulder itself, sloping down and outward to where the
     // sleeve starts. Without them an arm grows straight out of the side of the
@@ -522,7 +604,7 @@ function torsoMesh(a, f) {
     b.merge(taperedBox(0.16, 0.235, 0.15, 0.22, 0.028, accent), matCompose(0, 0, 0.982, 0, 0, 0));
 
     // Belt.
-    b.merge(taperedBox(0.29, 0.39, 0.28, 0.38, 0.05, deep), matCompose(0, 0, 0.2, 0, 0, 0));
+    b.merge(taperedBox(0.28, 0.36, 0.27, 0.35, 0.05, deep), matCompose(0, 0, 0.2, 0, 0, 0));
 
     if (a.scarf) {
       b.merge(cylinder(0.14, 0.13, 0.1, 8, accent), matCompose(0, 0, 0.86, 0, 0, 0));
@@ -535,7 +617,7 @@ function torsoMesh(a, f) {
 
 function pelvisMesh(a, f) {
   const uniform = paintTone(a.uniform || f.color2 || '#171a22', UNIFORM_TONE);
-  return cached(`pelvis:${uniform}`, () => taperedBox(0.27, 0.36, 0.26, 0.34, 0.16, shade(uniform, 0.82), {
+  return cached(`pelvis:${uniform}`, () => taperedBox(0.25, 0.315, 0.245, 0.30, 0.16, shade(uniform, 0.82), {
     z0: -0.1,
   }));
 }
