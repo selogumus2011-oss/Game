@@ -82,10 +82,15 @@ export function drawFighter3(dl, cam, f, time, dt, fx, S, q) {
   const dist = Math.hypot(f.pos.x - cam.pos.x, f.pos.y - cam.pos.y, f.z - cam.pos.z);
   const near = q.detail > 1 ? 1 : 0.62;
   const lod = f.isPlayer ? 0 : dist > 34 * near ? 2 : dist > 17 * near ? 1 : 0;
+  // In first person the camera is inside the player's own head. Their torso,
+  // legs and face are either behind the lens or filling it, so the body draws
+  // as a view model: arms, hands and whatever they are holding, nothing else.
+  const viewModel = !!f.isPlayer && (cam.fpv || 0) > 0.55;
   const L = {
     lod,
     outlines: q.outlines && lod === 0,
     detail: lod === 0 ? q.detail : lod === 1 ? Math.min(1, q.detail) : 0,
+    viewModel,
   };
 
   const sk = pose3(f, time);
@@ -124,7 +129,9 @@ export function drawFighter3(dl, cam, f, time, dt, fx, S, q) {
 
   // --- auras ----------------------------------------------------------------
   S.tint = null;
-  drawAuras(dl, cam, f, sk, S, L, time, fade);
+  // Your own aura seen from inside it is a wall of colour, so it is thinned
+  // rather than dropped: you still get the tell that you are amped.
+  drawAuras(dl, cam, f, sk, S, L, time, viewModel ? fade * 0.35 : fade);
   S.alpha = 1;
 }
 
@@ -158,10 +165,12 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
     if (ol) drawOutline(dl, cam, mesh, mat, 1, ink, olScale);
   };
 
+  const vm = q.viewModel;
+
   // --- legs -----------------------------------------------------------------
   const thighW = LIMB_W.thigh * Sc * build;
   const shinW = LIMB_W.shin * Sc * build;
-  for (const k of ['L', 'R']) {
+  for (const k of vm ? [] : ['L', 'R']) {
     const hip = sk['hip' + k], knee = sk['k' + k], foot = sk['f' + k];
     emit(limbUnit(trouser), boneTransform(rootMat, hip, knee, thighW, tmpMat));
     emit(limbUnit(trouser), boneTransform(rootMat, knee, foot, shinW, tmpMat));
@@ -173,11 +182,13 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
   }
 
   // --- pelvis and torso -----------------------------------------------------
-  emit(pelvisMesh(a, f), partTransform(rootMat, sk.hip, 0, 0, tw * 0.4, Sc * build, tmpMat, Sc * build, Sc));
-  emit(torsoMesh(a, f), boneTransform(rootMat, sk.hip, neck, Sc * build, tmpMat, tw));
+  if (!vm) {
+    emit(pelvisMesh(a, f), partTransform(rootMat, sk.hip, 0, 0, tw * 0.4, Sc * build, tmpMat, Sc * build, Sc));
+    emit(torsoMesh(a, f), boneTransform(rootMat, sk.hip, neck, Sc * build, tmpMat, tw));
+  }
 
   // --- coat -----------------------------------------------------------------
-  if (q.detail > 0) {
+  if (q.detail > 0 && !vm) {
     const co = sk.P.rig.coat;
     matCompose(sk.hip.x + co.x * 0.5, sk.hip.y + co.y * 0.5, sk.hip.z + 0.02 * Sc,
       co.y * 0.5, -co.x * 0.7, tw * 0.6, Sc * build, Sc * build, Sc, tmpMat2);
@@ -209,9 +220,9 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
   const headAnchor = { x: head.x, y: head.y, z: head.z - 0.055 * Sc };
   const headMat = partTransform(rootMat, headAnchor,
     hr.y * 0.8, sk.headPitch - hr.x * 0.8, tw * 1.1 + sk.headYaw, hs, tmpMat);
-  emit(q.lod === 0 ? headMesh(a) : headMeshLow(a), headMat, outline, 2.6);
+  if (!vm) emit(q.lod === 0 ? headMesh(a) : headMeshLow(a), headMat, outline, 2.6);
   const mane = maneMesh(a);
-  if (mane && q.detail > 0) {
+  if (mane && q.detail > 0 && !vm) {
     matCompose(head.x - 0.01 * hs + hr.x * 0.4, head.y + hr.y * 0.4,
       headAnchor.z + 0.2 * hs,
       hr.y * 1.6, -hr.x * 1.6 + 0.12, tw * 1.1, hs, hs, hs, tmpMat2);

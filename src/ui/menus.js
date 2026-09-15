@@ -48,6 +48,7 @@ export class UI {
     this.settings = {
       masterVolume: 0.7, sfxVolume: 0.9, musicVolume: 0.3,
       particles: 1, grain: true, shake: 1, assist: 0, aimAssist: 0.7, showNames: true,
+      firstPerson: false, lookSensitivity: 1,
       render3d: true, cutscenes: true,
     };
   }
@@ -434,10 +435,15 @@ export class UI {
         ${slider('shake', 'Screen shake', 0, 1.5, 0.1)}
         ${slider('aimAssist', 'Aim assist', 0, 1, 0.1)}
         ${slider('assist', 'Black Flash window assist', 0, 1, 0.1)}
+        ${slider('lookSensitivity', 'Look sensitivity (first person)', 0.3, 2.5, 0.1)}
+        ${toggle('firstPerson', 'First person view')}
         ${toggle('render3d', '3D renderer')}
         ${toggle('cutscenes', 'Domain expansion cutscenes')}
         ${toggle('grain', 'Film grain')}
         ${toggle('showNames', 'Enemy name plates')}
+        <p class="section-note">First person puts the camera behind your eyes and takes the
+        mouse for looking — click once in the arena to hand the cursor over, Escape to get it
+        back. G switches view mid-fight. It needs the 3D renderer.</p>
         <p class="section-note">Turning the 3D renderer off falls back to the classic 2.5D
         presentation. Same simulation, same frame data — only the drawing changes.</p>
         <p class="section-note">Aim assist nudges a swing or a cast the last few degrees

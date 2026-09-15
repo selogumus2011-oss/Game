@@ -43,6 +43,9 @@ class Game {
     this.chargeStart = -1;
     this.chargeFired = false;
     this.settings = null;
+    this.firstPerson = false;
+    // Radians of turn per pixel of mouse movement.
+    this.lookSensitivity = 0.0026;
 
     this.ui = new UI(this.uiRoot, {
       onStart: (sel) => this.startMatch(sel),
@@ -91,22 +94,47 @@ class Game {
     if (audio.sfxGain) audio.sfxGain.gain.value = s.sfxVolume;
     this.effects.quality = s.particles;
     this.aimAssist = s.aimAssist ?? 0.7;
+    this.lookSensitivity = (s.lookSensitivity ?? 1) * 0.0026;
     if (this.world) {
       this.world.aimAssist = this.aimAssist;
       if (this.world.player) this.world.player.aimAssist = this.aimAssist;
     }
     this.cinematic.enabled = s.cutscenes !== false;
     this.setRenderMode(s.render3d !== false);
+    if (!!s.firstPerson !== this.firstPerson) this.setFirstPerson(!!s.firstPerson);
     for (const r of [this.renderer2d, this.renderer3d]) {
       r.settings.grain = s.grain;
       r.settings.showNames = s.showNames;
     }
   }
 
+  /**
+   * First or third person.
+   *
+   * The pointer lock is requested rather than taken: browsers only grant it
+   * inside a user gesture, so Input holds the wish and redeems it on the next
+   * click. Until then the camera is already in first person and the aim falls
+   * back to the ground-plane cursor, which is playable if not ideal.
+   */
+  setFirstPerson(on) {
+    if (!this.mode3d) on = false;
+    this.firstPerson = on;
+    const cam = this.camera3d;
+    // Enter looking where the body is already facing, so the switch does not
+    // spin you round.
+    if (on && this.world?.player) cam.fpvYaw = this.world.player.aim;
+    cam.setFirstPerson(on);
+    this.input.setPointerLock(on);
+    this.touch.firstPerson = on;
+    if (this.settings) this.settings.firstPerson = on;
+    this.world?.notify(on ? 'FIRST PERSON' : 'THIRD PERSON', '#8ad8ff');
+  }
+
   /** Swap presentation stacks, carrying the framing across so it does not jump. */
   setRenderMode(on3d) {
     if (on3d === this.mode3d && this.renderer) return;
     this.mode3d = on3d;
+    if (!on3d && this.firstPerson) this.setFirstPerson(false);
     const prev = this.camera;
     this.renderer = on3d ? this.renderer3d : this.renderer2d;
     this.camera = on3d ? this.camera3d : this.camera2d;
@@ -283,6 +311,11 @@ class Game {
     const it = p.intent;
     const input = this.input;
 
+    // First person is only offered by the 3D stack — the 2.5D renderer has no
+    // eye to sit behind.
+    if (input.consume('firstPerson') && this.mode3d) this.setFirstPerson(!this.firstPerson);
+    const fpv = this.firstPerson && this.mode3d;
+
     // Lock-on: T cycles the nearest live enemy, and aim snaps to it.
     if (input.consume('lock')) this.toggleLock(world, p);
     let locked = it.lockTarget ? world.byId(it.lockTarget) : null;
@@ -291,7 +324,27 @@ class Game {
       it.lockTarget = null;
     }
 
-    if (locked) {
+    if (fpv) {
+      // Mouse look. The cursor is locked, so the camera's own yaw is the aim —
+      // no unprojecting onto a ground plane the player may not even be looking
+      // at. A stick or a drag on the right half of a tablet feeds the same call.
+      const cam = this.camera3d;
+      const sens = this.lookSensitivity;
+      if (input.pointerLocked) cam.look(-input.look.x * sens, -input.look.y * sens);
+      else if (input.usingTouch) cam.look(-input.look.x * sens * 1.6, -input.look.y * sens * 1.6);
+      if (input.usingGamepad && (Math.abs(input.aimStick.x) > 0.15 || Math.abs(input.aimStick.y) > 0.15)) {
+        cam.look(-input.aimStick.x * 2.6 * dt, input.aimStick.y * 1.8 * dt);
+      }
+      // Lock-on still wins: it points the whole view, not just the swing.
+      if (locked) {
+        const want = vangle(vsub(locked.pos, p.pos));
+        let d = want - cam.fpvYaw;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        cam.fpvYaw += d * Math.min(1, dt * 9);
+      }
+      it.aim = cam.fpvYaw;
+    } else if (locked) {
       it.aim = vangle(vsub(locked.pos, p.pos));
     } else if (input.usingGamepad && (Math.abs(input.aimStick.x) > 0.2 || Math.abs(input.aimStick.y) > 0.2)) {
       it.aim = Math.atan2(input.aimStick.y, input.aimStick.x);

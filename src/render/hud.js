@@ -5,6 +5,7 @@ import { clamp, clamp01, lerp, TAU, PI, vdist } from '../core/math.js';
 import { hexA } from './characters.js';
 import { flashWindowPhase, FLASH } from '../sim/combat.js';
 import { DOMAIN_FLOW } from '../sim/fighter.js';
+import { bestTarget } from '../sim/assist.js';
 import { FLATTEN, HEIGHT } from './camera.js';
 import { STATUS_META } from '../sim/status.js';
 
@@ -46,6 +47,7 @@ export class Hud {
     ctx.save();
     ctx.textBaseline = 'alphabetic';
 
+    if (cam?.firstPerson) this.drawCrosshair(ctx, world, cam, p, W, H);
     this.drawFlashRing(ctx, world, cam, p);
     this.drawVitals(ctx, world, p, W, H);
     this.drawAbilities(ctx, world, p, W, H);
@@ -75,6 +77,42 @@ export class Hud {
   // -------------------------------------------------------------------------
   // Black Flash timing ring — the most important widget in the game.
   // -------------------------------------------------------------------------
+
+  /**
+   * First person needs a point of aim, and this one doubles as a tell.
+   *
+   * It opens while you are in recovery and closes as you come back to neutral,
+   * so the moment you can act again is readable without looking at the HUD —
+   * and it goes red the instant something is in range of the swing you are
+   * holding, which is what sells the aim assist as help rather than magic.
+   */
+  drawCrosshair(ctx, world, cam, p, W, H) {
+    const cx = W / 2;
+    const cy = H / 2;
+    const busy = p.state === 'attack' || p.state === 'cast';
+    const spread = busy ? 9 : 0;
+    const hot = !!bestTarget(world, p, p.aim, 3.4);
+    const color = hot ? '#ff5d5d' : 'rgba(255,255,255,0.8)';
+    const gap = 4 + spread;
+    const len = 7;
+    ctx.save();
+    ctx.globalAlpha = cam.fpv;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      ctx.moveTo(cx + dx * gap, cy + dy * gap);
+      ctx.lineTo(cx + dx * (gap + len), cy + dy * (gap + len));
+    }
+    ctx.stroke();
+    // Centre dot, so a still crosshair still has a point.
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
   drawFlashRing(ctx, world, cam, p) {
     const phase = flashWindowPhase(p);
@@ -270,11 +308,15 @@ export class Hud {
         ctx.fillStyle = '#ffffff';
         ctx.fillText(cd.toFixed(1), x + size / 2, y + size / 2 + 5);
       } else {
-        ctx.font = `800 15px ${FONT}`;
+        // The card used to carry a single kanji, so 15px centred was plenty.
+        // A word needs the size chosen to fit instead — and a long one needs
+        // to wrap rather than be cut down to "Dis…".
         ctx.textAlign = 'center';
         ctx.fillStyle = ready ? (p.technique?.color || '#ffffff') : 'rgba(255,255,255,0.28)';
-        const glyph = fitText(ctx, shortName(ab.name), size - 6);
-        ctx.fillText(glyph, x + size / 2, y + size / 2 + 4);
+        // The label may lean a couple of pixels into the gap between cards;
+        // that is cheaper than ellipsising a nine-letter technique name.
+        drawFitWrapped(ctx, shortName(ab.name).toUpperCase(), x + size / 2, y + size / 2,
+          size + gap - 6, 15, 7);
       }
 
       // Key + cost.
@@ -290,11 +332,14 @@ export class Hud {
         ctx.textAlign = 'right';
         ctx.fillText('MAX', x + size - 5, y + 12);
       }
-      // Name underneath, clipped to the card so neighbours never collide.
-      ctx.font = `600 9px ${FONT}`;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
-      ctx.fillText(fitText(ctx, shortName(ab.name), size + gap - 2), x + size / 2, y + size + 12);
+      // The technique's own name goes under the card only when the card had to
+      // show a cooldown instead of it.
+      if (cd > 0.05) {
+        ctx.font = `600 9px ${FONT}`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText(fitText(ctx, shortName(ab.name), size + gap - 2), x + size / 2, y + size + 12);
+      }
     }
     ctx.restore();
   }
@@ -961,6 +1006,69 @@ function bar(ctx, x, y, w, h, frac, color, alpha = 1, highlight) {
     ctx.restore();
   }
   ctx.restore();
+}
+
+/**
+ * Split a label into the pieces a line break may fall between.
+ *
+ * A space is consumed by the break; a hyphen stays attached to the piece
+ * before it, so "World-Cutting Slash" can wrap as "WORLD-" / "CUTTING" /
+ * "SLASH" rather than being cut down to "WORLD-CU…".
+ */
+function breakPieces(text) {
+  const out = [];
+  let cur = '';
+  for (const ch of text) {
+    if (ch === ' ') { if (cur) out.push(cur); cur = ''; }
+    else if (ch === '-') { out.push(cur + '-'); cur = ''; }
+    else cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out.length ? out : [text];
+}
+
+/** Greedy wrap of `pieces` into lines no wider than maxW at the current font. */
+function wrapPieces(ctx, pieces, maxW) {
+  const lines = [];
+  let line = '';
+  for (const piece of pieces) {
+    const joiner = line && !line.endsWith('-') ? ' ' : '';
+    const merged = line + joiner + piece;
+    if (!line) { line = piece; continue; }
+    if (ctx.measureText(merged).width <= maxW) line = merged;
+    else { lines.push(line); line = piece; }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/**
+ * Draw a label centred in a box, shrinking and wrapping until it fits.
+ *
+ * Steps down from maxSize and takes the first size whose greedy wrap comes in
+ * at or under maxLines with every line inside maxW. Names here run from
+ * "Cleave" to "World-Cutting Slash", so one rule has to cover both.
+ */
+function drawFitWrapped(ctx, text, cx, cy, maxW, maxSize, minSize, maxLines = 3) {
+  const pieces = breakPieces(text);
+  let best = null;
+  for (let size = maxSize; size >= minSize; size--) {
+    ctx.font = `800 ${size}px ${FONT}`;
+    const lines = wrapPieces(ctx, pieces, maxW);
+    if (lines.length <= maxLines && lines.every((l) => ctx.measureText(l).width <= maxW)) {
+      best = { size, lines };
+      break;
+    }
+  }
+  if (!best) {
+    ctx.font = `800 ${minSize}px ${FONT}`;
+    best = { size: minSize, lines: wrapPieces(ctx, pieces, maxW).slice(0, maxLines) };
+    best.lines = best.lines.map((l) => fitText(ctx, l, maxW));
+  }
+  ctx.font = `800 ${best.size}px ${FONT}`;
+  const lh = best.size * 1.06;
+  const top = cy - ((best.lines.length - 1) * lh) / 2 + best.size * 0.34;
+  for (let i = 0; i < best.lines.length; i++) ctx.fillText(best.lines[i], cx, top + i * lh);
 }
 
 /** Trim a label with an ellipsis until it fits `maxW` pixels. */

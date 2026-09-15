@@ -145,6 +145,34 @@ export class Camera3 {
     // than a snap. Cleared every frame by whoever set it.
     this.override = null;
     this.rot = 0;               // screen roll, read by the 2D post stack
+
+    // --- First person ---
+    // A weight rather than a flag, so the switch is a move the eye can follow
+    // rather than a teleport. Everything downstream that needs to know whether
+    // the player's own body is in shot reads `fpv`.
+    this.fpv = 0;
+    this.fpvTarget = 0;
+    this.fpvYaw = this.baseYaw;
+    this.fpvPitch = 0.02;
+    // Distance from the eye to the notional look point. The orbit rig places
+    // the eye at lookAt - dir * dist, so putting lookAt this far down the
+    // sightline and dist at the same value lands the eye exactly on the head.
+    this.fpvReach = 3.2;
+    this.eyeHeight = 1.56;
+  }
+
+  /** Turn first person on or off. The transition is animated by update(). */
+  setFirstPerson(on) { this.fpvTarget = on ? 1 : 0; }
+  get firstPerson() { return this.fpvTarget > 0.5; }
+
+  /** Feed a look delta in radians, from a mouse, a stick or a drag. */
+  look(dYaw, dPitch) {
+    this.fpvYaw = this.fpvYaw + dYaw;
+    while (this.fpvYaw > PI) this.fpvYaw -= TAU;
+    while (this.fpvYaw < -PI) this.fpvYaw += TAU;
+    // Short of straight up and straight down: a fighting game does not need
+    // either, and clamping well inside them keeps the horizon readable.
+    this.fpvPitch = clamp(this.fpvPitch + dPitch, -0.95, 0.85);
   }
 
   resize(w, h) {
@@ -291,6 +319,34 @@ export class Camera3 {
     this.lookAt.x = this.x;
     this.lookAt.y = this.y;
     this.lookAt.z = 1.1 + cineK * 0.5;
+
+    // First person. The orbit rig already places the eye at
+    // lookAt - dir * dist, so rather than special-casing commit() we put the
+    // look point one reach down the sightline from the head: the subtraction
+    // then lands the eye on the head itself, and every other consumer of the
+    // camera (projection, culling, the HUD's metres-per-pixel) keeps working
+    // untouched.
+    this.fpv = damp(this.fpv, this.fpvTarget, 9, dt);
+    if (this.fpv > 0.001 && focus) {
+      const cp = Math.cos(this.fpvPitch), sp = Math.sin(this.fpvPitch);
+      const R = this.fpvReach;
+      // Sit the eye just ahead of the head so the face never clips the lens,
+      // and ride the body's bob so running has weight.
+      const bob = Math.sin(this.time * 11) * clamp(vlen(focus.vel) / 9, 0, 1) * 0.055;
+      const ex = focus.pos.x + Math.cos(this.fpvYaw) * 0.16;
+      const ey = focus.pos.y + Math.sin(this.fpvYaw) * 0.16;
+      const ez = focus.z + this.eyeHeight * (focus.scale || 1) + bob;
+      const w = this.fpv;
+      let d = this.fpvYaw - this.yaw;
+      while (d > PI) d -= TAU;
+      while (d < -PI) d += TAU;
+      this.yaw += d * w;
+      this.pitch = lerp(this.pitch, this.fpvPitch, w);
+      this.dist = lerp(this.dist, R, w);
+      this.lookAt.x = lerp(this.lookAt.x, ex + Math.cos(this.fpvYaw) * cp * R, w);
+      this.lookAt.y = lerp(this.lookAt.y, ey + Math.sin(this.fpvYaw) * cp * R, w);
+      this.lookAt.z = lerp(this.lookAt.z, ez - sp * R, w);
+    }
 
     const o = this.override;
     if (o) {

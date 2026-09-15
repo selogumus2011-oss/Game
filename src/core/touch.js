@@ -29,6 +29,7 @@ const BUTTONS = [
   { action: 'simpleDomain', label: 'SD', ring: 2, hold: true },
   { action: 'amplify', label: 'AMP', ring: 2 },
   { action: 'rct', label: 'RCT', ring: 2, hold: true },
+  { action: 'firstPerson', label: 'VIEW', ring: 2 },
 ];
 
 export class TouchControls {
@@ -41,6 +42,9 @@ export class TouchControls {
     this.height = 0;
     this.moveTouch = null;        // {id, ox, oy, x, y}
     this.aimTouch = null;
+    // Mirrors the game's view mode. In first person the right half of the
+    // screen becomes a look pad rather than a point-to-aim surface.
+    this.firstPerson = false;
     this.buttonTouches = new Map(); // touchId -> action
     this.layout = [];
     this.opacity = 0;
@@ -137,9 +141,12 @@ export class TouchControls {
         this.moveTouch = { id: t.identifier, ox: x, oy: y, x, y };
       } else if (!this.aimTouch) {
         this.aimTouch = { id: t.identifier, ox: x, oy: y, x, y, t0: performance.now(), moved: 0 };
-        // Touching the right half aims there immediately.
-        this.input.mouse.x = x;
-        this.input.mouse.y = y;
+        // Touching the right half aims there immediately — except in first
+        // person, where the aim is the view and a touch must not jerk it.
+        if (!this.firstPerson) {
+          this.input.mouse.x = x;
+          this.input.mouse.y = y;
+        }
         this.input.mouse.inWindow = true;
         this.input.pressVirtual('attack');
       }
@@ -155,11 +162,19 @@ export class TouchControls {
         this.moveTouch.x = x;
         this.moveTouch.y = y;
       } else if (this.aimTouch && t.identifier === this.aimTouch.id) {
-        this.aimTouch.moved += Math.hypot(x - this.aimTouch.x, y - this.aimTouch.y);
+        const dx = x - this.aimTouch.x;
+        const dy = y - this.aimTouch.y;
+        this.aimTouch.moved += Math.hypot(dx, dy);
         this.aimTouch.x = x;
         this.aimTouch.y = y;
-        this.input.mouse.x = x;
-        this.input.mouse.y = y;
+        if (this.firstPerson) {
+          // A drag is a look, not a point: the same delta a mouse would give.
+          this.input.look.x += dx;
+          this.input.look.y += dy;
+        } else {
+          this.input.mouse.x = x;
+          this.input.mouse.y = y;
+        }
       }
     }
   }

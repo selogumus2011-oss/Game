@@ -25,6 +25,7 @@ export const ACTIONS = {
   tool: 'Swap cursed tool',
   vow: 'Impromptu Binding Vow',
   lock: 'Lock-on toggle',
+  firstPerson: 'First person / third person',
   codex: 'Codex / pause',
 };
 
@@ -49,6 +50,7 @@ export const DEFAULT_BINDS = {
   tool: ['KeyC'],
   vow: ['KeyV'],
   lock: ['KeyT'],
+  firstPerson: ['KeyG'],
   codex: ['Tab'],
 };
 
@@ -64,6 +66,14 @@ export class Input {
     this.holdStart = new Map();
     this.buffer = []; // {action, t}
     this.mouse = { x: 0, y: 0, worldX: 0, worldY: 0, inWindow: false };
+    // Raw movement since the last frame, in pixels. First person reads this
+    // rather than the cursor position, so looking around does not run out of
+    // screen. Zeroed by endFrame().
+    this.look = vec(0, 0);
+    // Set while the browser owns the cursor. First person asks for it; every
+    // other mode leaves it alone.
+    this.pointerLocked = false;
+    this.wantPointerLock = false;
     this.wheel = 0;
     this.time = 0;
     this.gamepadIndex = null;
@@ -100,15 +110,45 @@ export class Input {
     this._on(window, 'mouseup', (e) => this._release('Mouse' + e.button));
     this._on(canvas, 'contextmenu', (e) => e.preventDefault());
     this._on(window, 'mousemove', (e) => {
-      const r = canvas.getBoundingClientRect();
-      this.mouse.x = e.clientX - r.left;
-      this.mouse.y = e.clientY - r.top;
+      if (this.pointerLocked) {
+        this.look.x += e.movementX || 0;
+        this.look.y += e.movementY || 0;
+        // Keep the notional cursor centred so anything still reading it (the
+        // ground-plane aim in third person) gets a sane answer on unlock.
+        this.mouse.x = canvas.clientWidth * 0.5;
+        this.mouse.y = canvas.clientHeight * 0.5;
+      } else {
+        const r = canvas.getBoundingClientRect();
+        this.mouse.x = e.clientX - r.left;
+        this.mouse.y = e.clientY - r.top;
+      }
       this.mouse.inWindow = true;
       this.usingGamepad = false;
+    });
+    this._on(document, 'pointerlockchange', () => {
+      this.pointerLocked = document.pointerLockElement === canvas;
+      this.look.x = 0;
+      this.look.y = 0;
+    });
+    // The browser only grants the lock inside a user gesture, so the request
+    // rides on the next click rather than firing when the mode is switched.
+    this._on(canvas, 'click', () => {
+      if (this.wantPointerLock && !this.pointerLocked && canvas.requestPointerLock) {
+        const r = canvas.requestPointerLock();
+        if (r && typeof r.catch === 'function') r.catch(() => {});
+      }
     });
     this._on(canvas, 'wheel', (e) => { this.wheel += Math.sign(e.deltaY); e.preventDefault(); }, { passive: false });
     this._on(window, 'gamepadconnected', (e) => { this.gamepadIndex = e.gamepad.index; });
     this._on(window, 'gamepaddisconnected', () => { this.gamepadIndex = null; });
+  }
+
+  /** Ask for or give up the cursor. Safe to call every frame. */
+  setPointerLock(want) {
+    this.wantPointerLock = want;
+    if (!want && this.pointerLocked && typeof document !== 'undefined' && document.exitPointerLock) {
+      document.exitPointerLock();
+    }
   }
 
   destroy() {
@@ -159,6 +199,8 @@ export class Input {
     this.buffer.length = 0;
     this.touchStick.x = 0;
     this.touchStick.y = 0;
+    this.look.x = 0;
+    this.look.y = 0;
   }
 
   /** Call once per frame *before* the simulation reads input. */
@@ -175,6 +217,8 @@ export class Input {
     this.justPressed.clear();
     this.justReleased.clear();
     this.wheel = 0;
+    this.look.x = 0;
+    this.look.y = 0;
   }
 
   _pollGamepad() {
