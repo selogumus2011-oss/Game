@@ -26,6 +26,29 @@ import { pickDpr, softSprite } from '../render/sprites.js';
  * ground fades into exactly the band of sky it meets rather than into a
  * slightly different colour, which shows up as a seam along the skyline.
  */
+/** The open domain the camera is standing in, if any. */
+function domainAt(world, x, y) {
+  for (const d of world.domains) {
+    if (d.closed) continue;
+    const dx = x - d.center.x, dy = y - d.center.y;
+    if (dx * dx + dy * dy < d.radius * d.radius) return d;
+  }
+  return null;
+}
+
+const domainHazeCache = new Map();
+function domainHaze(d) {
+  const id = d.spec.id;
+  let v = domainHazeCache.get(id);
+  if (!v) {
+    // Darker than the domain's own accent: the air is not the light source,
+    // it is what the light has to travel through.
+    v = hexToRgb(shade(d.spec.color || '#202028', 0.42));
+    domainHazeCache.set(id, v);
+  }
+  return v;
+}
+
 const hazeCache = new Map();
 function hazeRgb(arena) {
   const id = arena?.id || 'default';
@@ -173,9 +196,13 @@ export class Renderer3D {
     S.key = 0.58;
     S.rim = 0.34;
 
-    // The haze the distance blends toward. It matches the horizon band of the
-    // sky, so far geometry meets the sky instead of stopping dead against it.
-    setFogColor(hazeRgb(world.arena));
+    // The haze the distance blends toward. Normally it matches the horizon band
+    // of the sky, so far geometry meets the sky instead of stopping dead
+    // against it — but a domain is a different space, and the air inside it is
+    // that space's air. Standing in Malevolent Shrine, distance should go red
+    // and black; standing in Unlimited Void it should go white.
+    const here = domainAt(world, cam.pos.x, cam.pos.y);
+    setFogColor(here ? domainHaze(here) : hazeRgb(world.arena));
     drawSky(ctx, cam, world.arena, W, H);
 
     const dl = this.dl;

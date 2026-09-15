@@ -323,6 +323,11 @@ export function drawProps3(dl, cam, world, S, q, time) {
   const cx = cam.pos.x, cy = cam.pos.y;
   for (const p of world.props) {
     if (p.destroyed) continue;
+    // A domain replaces the world inside it. The ground already stops at the
+    // barrier; anything standing on that ground has to stop there too, or a
+    // shrine full of trees is a hole in the illusion rather than another
+    // space.
+    if (insideDomain(world, p.pos.x, p.pos.y, -p.radius)) continue;
     if (!cam.visible(p.pos.x, p.pos.y, p.height * 0.5, p.height)) continue;
     // Small clutter stops being legible long before it stops being drawn.
     const d = Math.hypot(p.pos.x - cx, p.pos.y - cy);
