@@ -63,7 +63,16 @@ window is five and a half million pixels a frame.
 | `V` | Declare an impromptu **binding vow** |
 | `C` | Swap cursed tool |
 | `T` | Lock-on |
+| `G` | **First person** ↔ third person |
 | `Tab` | Codex · `Esc` pause |
+
+In first person the mouse looks rather than points: click once in the arena to
+hand the cursor over, `Esc` to get it back. Your own body draws as arms, hands
+and whatever you are holding, so the hand sign a technique raises is readable —
+which is the point of it. Sensitivity is in Settings. It needs the 3D renderer.
+
+On a tablet the right half of the screen aims and attacks, or looks around in
+first person; the `VIEW` button switches between them.
 
 Gamepads are supported (left stick move, right stick aim, face/shoulder buttons
 mapped to the same actions).
@@ -301,6 +310,64 @@ with rather than at the midpoint of its reach, and a Domain Expansion opens the
 same way: a ring of cuts around the caster, the space opened before the barrier
 appears inside it.
 
+### Every technique lands differently
+
+Every technique earns an impact frame when it connects, scaled by how much the
+hit actually mattered — chip damage gets nothing, a finisher gets everything.
+But an impact frame in a different colour is still the same impact frame, so
+each technique also names an **archetype** that decides what the hit looks like
+apart from the frame. Ten of them cover the roster:
+
+| Archetype | Reads as | Used by |
+| --- | --- | --- |
+| `cut` | Strokes across the target; the air opens | Shrine, Heavenly Restriction, Projection |
+| `collapse` | Rings closing inward, dust pulled in | Limitless, Blue, Maximum: Uzumaki |
+| `burst` | A ring out, sparks, light | Red, Divergent Fist, Boogie Woogie |
+| `crush` | Two ground rings, a dust plume, debris, almost no light | Ratio, Star Rage, Deadly Sentencing |
+| `pierce` | One stroke through, spray out the far side | Blood Manipulation, Straw Doll, Construction |
+| `scorch` | Embers rising, ground blackened | Disaster Flames |
+| `frost` | Shards growing out of the hit, a slow ring | Ice Formation |
+| `arc` | Short bright forks | Electric Discharge |
+| `soul` | Rings inside the target, no debris at all | Idle Transfiguration, Copy |
+| `surge` | Weight rather than shape | Disaster Tides |
+| `beast` | Fanned claw strokes | Ten Shadows, Spirit Manipulation |
+
+A handful of abilities differ from the rest of their technique — Blue and Red
+are the same technique and opposite events, and Purple is neither — so they get
+their own entries. Anything unmapped falls back to an archetype implied by its
+shape, so a technique nobody wrote an entry for still lands as *something*.
+
+`src/render/signatures.js` holds the table; `tools/sigshots.mjs` shoots every
+archetype in a single colour, so two that differ only by hue are obvious.
+
+### Hand signs
+
+A sorcerer does not simply press a button: the hands go up first, and the shape
+they make is the tell. A cast raises a sign during the windup, holds it, and
+throws it away as the technique comes out. **A Domain Expansion always signs**,
+whatever its data says — the sure-hit is the one thing here that is never
+casual.
+
+A hand is a palm and five fingers, each three phalanges that curl cumulatively
+so a closed hand rolls into the palm rather than folding flat at one hinge. Six
+shapes — open, fist, point, two, claw, pinch — and six signs pairing them with a
+hold position and a finger direction. That direction matters: without it a hand
+just follows the forearm, which for anything held in front of the chest aims it
+straight at the viewer and hides the shape that is the whole reason the hand is
+up.
+
+They read best in first person, which is what they were built for.
+
+### Air
+
+Distance blends toward the arena's haze colour rather than darkening toward
+black — darkening reads as the lights going out, blending reads as air. The sky
+brightens all the way down to that same haze so the ground meets it rather than
+stopping dead against it, with a wide low glow behind so silhouettes have
+something to stand against. And there are cursed-energy motes drifting through
+it, in world space so they sort and parallax properly; a domain tints the air it
+encloses.
+
 ### The 3D renderer
 
 The game renders in real 3D: a perspective camera, low-poly models posed from an
@@ -374,8 +441,14 @@ feedback:
   technique landing gets the full panel. Past a threshold the frame adds ragged
   white gashes across the whole view. Black Flash, guard breaks, perfect
   parries, ultimates coming out and domain openings all have their own.
-- **Black Flash** inverts the screen, throws black lightning, scorches the
-  ground and stamps BLACK FLASH over the impact.
+- **Black Flash** gets a cut-in of its own, built on the opposite principles to
+  the domain cutscene: no letterbox creeping in, no chant, no orbit. The frame
+  stops dead on contact, space cracks black and red out of the point of impact,
+  BLACK FLASH slams in slightly oversized and settles, and half a second later
+  the camera eases back to the follow rig. It only takes the shot for your own
+  flash — one landing on you gets the frames and the shake, not the camera — and
+  a domain expansion always outranks it. Underneath: two stacked impact frames,
+  red then black, and four strokes crossing the punch.
 
 Animation is a pose system rather than a single swing value. Each attack is
 driven by the body mechanic it actually uses — jab, cross, spin, rising kick,
