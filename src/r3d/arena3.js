@@ -22,12 +22,13 @@ const tmp2 = new Float32Array(16);
  *
  * The lift used to be much larger, because the old shading almost never landed
  * a surface on its base colour and needed compensating for. Now that a lit
- * surface sits exactly on 1.0, that compensation double-counts: it was turning
- * floor seams into glowing lines and the ground into a brighter, more
- * saturated colour than anything standing on it. A painted background sits
- * *back*; it is never the loudest thing in the frame.
+ * surface sits exactly on 1.0, and the grade puts a proper S-curve over the
+ * top, that compensation does not just double-count — it inverts the frame.
+ * Measured, the floor was coming out at a luminance of 68 against a figure at
+ * 39: the brightest thing on screen was the ground, and the darkest was the
+ * person. A night exterior is the other way round, and by a long way.
  */
-const LIFT = 1.18;
+const LIFT = 0.62;
 const lift = (c, k = LIFT) => shade(c || '#202020', k);
 
 // ---------------------------------------------------------------------------
@@ -309,10 +310,18 @@ const PROP_BUILDERS = {
   },
 };
 
+/**
+ * Props are scenery, and scenery is painted to sit behind the cast.
+ *
+ * The lift here was inherited from the old shading and left a tree brighter
+ * than the person standing in front of it, which inverts the whole frame: the
+ * eye goes to the loudest thing, and it should never be a tree. Held to a
+ * touch above the ground so the set still reads as objects on a floor.
+ */
 function propMesh(p) {
   const build = PROP_BUILDERS[p.type] || PROP_BUILDERS.pillar;
   return cached(`prop:${p.type}:${p.color}:${p.emissive || ''}`,
-    () => build({ ...p, color: lift(p.color, 1.55) }));
+    () => build({ ...p, color: lift(p.color, 1.05) }));
 }
 
 export function drawProps3(dl, cam, world, S, q, time) {

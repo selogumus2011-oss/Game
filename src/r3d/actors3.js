@@ -13,7 +13,7 @@ import { pose3, rig3, updateRig3 } from './pose3.js';
 import { hasStatus } from '../sim/status.js';
 import {
   headMesh, headMeshLow, torsoMesh, coatMesh, pelvisMesh, maneMesh, toolMesh,
-  buildCurse, shade, eyeMesh, LIMB_W, cached,
+  buildCurse, shade, eyeMesh, LIMB_W, cached, paintTone, UNIFORM_TONE,
 } from './models3.js';
 import { boneTransform, partTransform } from './models3.js';
 import { handMesh } from './hands3.js';
@@ -101,6 +101,25 @@ export function drawFighter3(dl, cam, f, time, dt, fx, S, q) {
     viewModel,
   };
 
+  // Characters are lit for the shot; backgrounds are painted flat.
+  //
+  // This is not a cheat, it is how the work is actually made: a background is
+  // a painting with its lighting baked in and deliberately held back, and the
+  // characters on top of it are cel-lit separately and harder, so that the
+  // figure is always the highest-contrast thing in the frame. Sharing one
+  // lighting rig between the two is why a fighter at distance was sinking into
+  // the trees — the trees were coming out brighter than the people.
+  //
+  // A lower floor gives the shadow side somewhere to go; a stronger key widens
+  // the gap across the terminator; a stronger rim carves the silhouette off
+  // whatever is behind it.
+  const envAmbient = S.ambient;
+  const envKey = S.key;
+  const envRim = S.rim;
+  S.ambient = 0.30;
+  S.key = 0.74;
+  S.rim = 0.62;
+
   const sk = pose3(f, time);
   const P = sk.P;
   const r = P.rig;
@@ -135,6 +154,11 @@ export function drawFighter3(dl, cam, f, time, dt, fx, S, q) {
   if (isHuman) drawHumanoid(dl, cam, f, sk, S, L, time, a);
   else drawCurseBody(dl, cam, f, sk, S, L, time);
 
+  // Hand the environment's lighting back before anything else draws.
+  S.ambient = envAmbient;
+  S.key = envKey;
+  S.rim = envRim;
+
   // --- auras ----------------------------------------------------------------
   S.tint = null;
   // Your own aura seen from inside it is a wall of colour, so it is thinned
@@ -150,16 +174,9 @@ export function drawFighter3(dl, cam, f, time, dt, fx, S, q) {
 function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
   const Sc = sk.S;
   const build = sk.build;
-  // Character paint sits in a mid-tone, not near-black.
-  //
-  // Cel characters have to read against backgrounds that are themselves dark,
-  // so their base colours are painted lighter than the thing they represent —
-  // a black uniform is painted as a dark blue-grey, not as black. Authored
-  // colours here are the literal ones, so they get lifted into paint range;
-  // without it the new shading lands the whole body in one dark band and the
-  // silhouette dissolves into the floor.
+  // Character paint sits in a mid-tone, not near-black — see paintTone().
   const skin = a.skin || '#e9c8ac';
-  const uniform = shade(a.uniform || f.color2 || '#171a22', 2.35);
+  const uniform = paintTone(a.uniform || f.color2 || '#171a22', UNIFORM_TONE);
   const sleeve = shade(uniform, 1.05);
   const trouser = shade(uniform, 0.8);
   const glove = a.accent && f.tool && f.tool.shape !== 'none' ? shade(uniform, 1.3) : skin;

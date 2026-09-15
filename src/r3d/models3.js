@@ -103,6 +103,57 @@ const sphereMesh = (c, r = 1, u = 8, v = 6) => cached(`sph:${c}:${r}:${u}:${v}`,
  * rather than brightness; a shadow baked into geometry has to do the same or
  * it reads as a smudge next to the shaded ones around it.
  */
+/**
+ * Convert an authored colour into paint.
+ *
+ * The character colours here are literal — a black uniform is written as
+ * near-black — and cel paint never is. A painter mixing for animation picks a
+ * value that will read against the backgrounds the character stands on, then
+ * puts the shadow tone below it; the "black" jacket ends up a dark blue-grey
+ * somewhere around a third of the way up the range.
+ *
+ * Scaling everything by one multiplier does not do this. It leaves a colour
+ * authored at near-black still dark and blows out one already in the middle,
+ * so the cast comes out at wildly different values for no reason anybody
+ * chose. Normalising to a target luminance instead gives every character the
+ * same footing, and keeps the hue and saturation that were authored.
+ */
+/**
+ * Where a uniform's base paint sits, as luminance out of 255.
+ *
+ * Chosen by measurement rather than taste: it is the value that puts a
+ * rendered torso comfortably above the ground it stands on once the cel
+ * bands and the grade have both taken their cut. tools/valuetest.mjs is the
+ * instrument.
+ */
+const UNIFORM_TONE = 96;
+
+function paintTone(hex, target) {
+  const h = (hex || '#888888').replace('#', '');
+  const p = h.length === 3
+    ? h.split('').map((c) => parseInt(c + c, 16))
+    : [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  const lum = 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+  // A colour with no light in it at all has no hue to preserve, so it becomes
+  // a neutral at the target rather than dividing by nothing.
+  if (lum < 1) return `#${[target, target, target].map(v => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
+  const k = target / lum;
+  // Lifting alone keeps the original saturation, and a near-black colour holds
+  // its hue ratio all the way up — a jacket written as almost-black comes out
+  // vivid scarlet. A painter mixing lighter adds white, which greys the mix,
+  // and the further they have to go the greyer it gets. So the pull toward
+  // neutral scales with how far the lift had to reach.
+  const grey = Math.min(0.45, Math.max(0, (k - 1) * 0.12));
+  const mix = (v) => {
+    const up = v * k;
+    return Math.min(255, Math.round(up + (target - up) * grey));
+  };
+  const r = mix(p[0]);
+  const g = mix(p[1]);
+  const b = mix(p[2]);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
 function shadeCool(hex, k) {
   const h = (hex || '#888888').replace('#', '');
   const p = h.length === 3
@@ -383,7 +434,7 @@ function maneMesh(a) {
 function torsoMesh(a, f) {
   // Uniform colours are authored dark for a flat 2D fill; under a lit shader
   // they need lifting or the whole body reads as a silhouette.
-  const uniform = shade(a.uniform || f.color2 || '#171a22', 1.55);
+  const uniform = paintTone(a.uniform || f.color2 || '#171a22', UNIFORM_TONE);
   const accent = a.accent || f.color || '#8ad8ff';
   const key = `torso2:${uniform}:${accent}:${a.scarf ? 1 : 0}`;
   return cached(key, () => {
@@ -453,7 +504,7 @@ function torsoMesh(a, f) {
 }
 
 function pelvisMesh(a, f) {
-  const uniform = shade(a.uniform || f.color2 || '#171a22', 1.55);
+  const uniform = paintTone(a.uniform || f.color2 || '#171a22', UNIFORM_TONE);
   return cached(`pelvis:${uniform}`, () => taperedBox(0.27, 0.36, 0.26, 0.34, 0.16, shade(uniform, 0.82), {
     z0: -0.1,
   }));
@@ -461,7 +512,7 @@ function pelvisMesh(a, f) {
 
 /** Coat tails: four hanging panels that the coat spring swings. */
 function coatMesh(a, f) {
-  const uniform = shade(a.uniform || f.color2 || '#171a22', 1.45);
+  const uniform = paintTone(a.uniform || f.color2 || '#171a22', UNIFORM_TONE * 0.94);
   const accent = a.accent || f.color || '#8ad8ff';
   return cached(`coat:${uniform}:${accent}`, () => {
     const b = new MeshBuilder();
@@ -1055,5 +1106,5 @@ const LIMB_W = {
 
 export {
   headMesh, headMeshLow, torsoMesh, coatMesh, pelvisMesh, maneMesh, toolMesh,
-  buildCurse, shade, eyeMesh, lump, LIMB_W, cached,
+  buildCurse, shade, eyeMesh, lump, LIMB_W, cached, paintTone, UNIFORM_TONE,
 };

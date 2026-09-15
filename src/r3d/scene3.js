@@ -458,7 +458,17 @@ export class Renderer3D {
     const inDom = dom && !dom.closed;
     ctx.save();
 
-    // Squaring needs a copy: compositing a canvas onto itself reads the
+    // An S-curve, not a crush.
+    //
+    // This used to multiply the picture by itself, which darkens everything
+    // and the midtones hardest — the whole frame came out murky and the cast
+    // came out darker than the floor they stand on. A curve wants to deepen
+    // the shadows *and* lift the highlights, which is two passes: multiply
+    // with a copy pulls the darks down, screen with the same copy pushes the
+    // brights up, and between them the midtones sit roughly where they were.
+    // Net result is contrast, which is what the show has and this did not.
+    //
+    // Both need the copy: compositing a canvas onto itself reads the
     // destination while it is being written and bands the result.
     if (this.quality > 0.5) {
       const cw = Math.max(2, Math.round(W * 0.5));
@@ -471,23 +481,36 @@ export class Renderer3D {
       }
       this.toneCtx.globalCompositeOperation = 'copy';
       this.toneCtx.drawImage(this.canvas, 0, 0, cw, ch);
+      // Multiply pulls the darks down, screen pushes the brights up, and
+      // between them the midtones stay put. `overlay` is the same curve in one
+      // composite and was tried first — it is several times slower than these
+      // two put together in a software rasteriser, and lands darker.
       ctx.globalCompositeOperation = 'multiply';
-      ctx.globalAlpha = 0.42;
+      ctx.globalAlpha = 0.34;
+      ctx.drawImage(t, 0, 0, W, H);
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = 0.34;
       ctx.drawImage(t, 0, 0, W, H);
       ctx.globalAlpha = 1;
     }
 
-    const desat = clamp01(0.3 + drain * 0.62);
-    ctx.globalCompositeOperation = 'saturation';
-    ctx.globalAlpha = desat;
-    ctx.fillStyle = '#808080';
-    ctx.fillRect(0, 0, W, H);
-    ctx.globalAlpha = 1;
+    // Colour is only pulled out for a domain, which drains it deliberately.
+    // The flat thirty percent that used to apply always was fighting the
+    // palette: this show's nights are saturated — deep blues, hot reds — and
+    // desaturating them by default throws away the thing that carries them.
+    const desat = clamp01(drain * 0.85);
+    if (desat > 0.01) {
+      ctx.globalCompositeOperation = 'saturation';
+      ctx.globalAlpha = desat;
+      ctx.fillStyle = '#808080';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
 
     const tint = inDom ? dom.spec.color2 || '#0a0a14' : '#0e1624';
     const c = hexToRgb(tint);
     ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = `rgb(${196 + c[0] * 0.14 | 0},${202 + c[1] * 0.13 | 0},${222 + c[2] * 0.1 | 0})`;
+    ctx.fillStyle = `rgb(${216 + c[0] * 0.11 | 0},${221 + c[1] * 0.1 | 0},${236 + c[2] * 0.07 | 0})`;
     ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = 0.09;
