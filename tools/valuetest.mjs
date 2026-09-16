@@ -45,7 +45,12 @@ await page.waitForTimeout(150);
 await page.click('[data-act="next"]');
 await page.waitForTimeout(250);
 await page.click('[data-act="fight"]');
-await page.waitForTimeout(1800);
+// Long enough for the match to be built, short enough that almost nothing has
+// happened in it. The old wait was 1800ms of live fight, which meant every run
+// measured a different moment: one of them caught the player mid-technique
+// with an aura over the torso and reported it four times brighter than the
+// run before. The seed pins the arena; this pins the moment.
+await page.waitForTimeout(350);
 
 const v = await page.evaluate(() => {
   const g = window.game;
@@ -66,7 +71,22 @@ const v = await page.evaluate(() => {
   pl.vel.x = 0; pl.vel.y = 0;
   pl.state = 'idle'; pl.action = null; pl.cast = null; pl.domainCast = null;
   pl.timeSinceHit = 9; pl.statuses.length = 0; pl.amplify = null;
-  for (const f of w.fighters) if (f !== pl) f.dead = true;
+  // Everything that could put a bright overlay on the figure: an aura scales
+  // with flow, a domain tints the whole frame, the veil wipes across it.
+  pl.flow = 0;
+  pl.ce = pl.maxCe;
+  pl.hp = pl.maxHp;
+  pl.cast = null; pl.domainCast = null;
+  w.domains.length = 0;
+  g.renderer3d.veilIntro = 0;
+  // The mote field drifts on its own seed and each one is a bright sprite, so
+  // whichever of them happens to be over the sample boxes decides the reading.
+  // It is ambience, not value structure; this test is about the second.
+  g.renderer3d.motes = [];
+  g.renderer3d._noMotes = true;
+  // Out of frame rather than merely dead: a body still draws, and one lying in
+  // the sample box is what the box would then report.
+  for (const f of w.fighters) if (f !== pl) { f.dead = true; f.pos.x = 400; f.pos.y = 400; }
   g.effects.clear();
 
   const c = g.camera3d;

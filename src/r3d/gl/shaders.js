@@ -68,11 +68,13 @@ in vec2 aFlags;      // x: emissive, y: unused
 
 uniform mat4 uMVP;
 uniform mat4 uMV;
+uniform mat4 uModel;
 
 flat out vec3 vColor;
 flat out vec3 vNormal;    // view space, already flipped to face the camera
 flat out float vEmissive;
 out float vDepth;
+out vec3 vWorld;          // for the shadow lookup
 
 void main() {
   vec4 viewPos = uMV * vec4(aPos, 1.0);
@@ -91,6 +93,7 @@ void main() {
 
   vColor = aColor;
   vEmissive = aFlags.x;
+  vWorld = (uModel * vec4(aPos, 1.0)).xyz;
   gl_Position = uMVP * vec4(aPos, 1.0);
 }
 `;
@@ -104,6 +107,7 @@ flat in vec3 vColor;
 flat in vec3 vNormal;
 flat in float vEmissive;
 in float vDepth;
+in vec3 vWorld;
 
 uniform vec3 uLight;        // view-space key direction
 uniform vec3 uLevels;       // ambient, key, rim
@@ -112,6 +116,28 @@ uniform float uAlpha;
 uniform float uAdditive;    // 1.0 skips lighting entirely, as the software path does
 uniform vec2 uFogRange;
 uniform vec3 uFogColor;
+uniform sampler2D uShadow;
+uniform mat4 uLightVP;      // world -> the sun's clip space
+uniform float uShadowOn;
+
+/**
+ * Is this point in shade?
+ *
+ * Hard edged on purpose, and no soft filtering. A cel-animated cast shadow is
+ * a shape somebody painted with a brush — it has an edge, not a gradient — so
+ * the usual percentage-closer blur would be working against the whole look.
+ */
+float inShadow() {
+  if (uShadowOn < 0.5) return 0.0;
+  vec4 lp = uLightVP * vec4(vWorld, 1.0);
+  vec3 p = lp.xyz / lp.w * 0.5 + 0.5;
+  // Outside the map, or past its far plane: the sun reaches it.
+  if (p.x <= 0.0 || p.x >= 1.0 || p.y <= 0.0 || p.y >= 1.0 || p.z >= 1.0) return 0.0;
+  // A constant bias is enough here because the map holds back faces: the
+  // recorded depth is already the far side of whatever cast the shadow, which
+  // is the cheap fix for surface acne on solid geometry.
+  return p.z - 0.0016 > texture(uShadow, p.xy).r ? 1.0 : 0.0;
+}
 
 // Rim is a painted shape, not a falloff. A smooth term slides a surface
 // through the bands as it curves away, which is a gradient by another name; a
@@ -127,6 +153,12 @@ void main() {
     light = uLevels.x + uLevels.y * max(0.0, d);
     if (uLevels.z > 0.0 && 1.0 - vNormal.z > RIM_EDGE) light += uLevels.z * 1.7;
     if (vEmissive > 0.0) light = mix(light, 1.45, vEmissive);
+    // A cast shadow drops the surface into the second paint tone rather than
+    // multiplying it down. Everything else in this renderer quantises to the
+    // band table, and a shadow that did not would be the one soft gradient in
+    // a frame of flat colour. Taken as a minimum, so a surface already facing
+    // away from the key does not get LIGHTER for being in shade.
+    if (inShadow() > 0.5) light = min(light, 0.74);
   }
 
   vec4 band = BANDS[bandOf(light)];
@@ -357,4 +389,16 @@ void main() {
   if (c.a <= 0.002) discard;
   outColor = vec4(c.rgb, c.a);
 }
+`;
+
+export const DEPTH_VS = /* glsl */`#version 300 es
+precision highp float;
+in vec3 aPos;
+uniform mat4 uLightMVP;
+void main() { gl_Position = uLightMVP * vec4(aPos, 1.0); }
+`;
+
+export const DEPTH_FS = /* glsl */`#version 300 es
+precision highp float;
+void main() {}
 `;

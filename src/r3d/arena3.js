@@ -154,6 +154,13 @@ export function drawGround3(dl, cam, world, S, q) {
   S.alpha = 1;
   S.fogNear = 22;
   S.fogFar = far;
+  // The floor does not cast. Every tile is a flat plate with no thickness, so
+  // its front and back faces sit at the same depth — and a shadow map built
+  // from back faces then records the floor at exactly the floor's own depth,
+  // which makes it shadow itself in a speckled mess wherever the comparison
+  // falls on the wrong side of the bias. Nothing is lost: a floor casting onto
+  // itself has nothing to cast.
+  S.noShadow = true;
 
   // Both bands carry their grout. Dropping it from the far one was cheaper but
   // left a brightness step down the seam between them — a grouted tile averages
@@ -177,6 +184,7 @@ export function drawGround3(dl, cam, world, S, q) {
     S.alpha = 1;
   }
   S.fogNear = undefined;
+  S.noShadow = false;
 }
 
 /**

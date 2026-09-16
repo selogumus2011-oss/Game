@@ -259,6 +259,7 @@ export class Renderer3D {
     dl.gpu = gpu;
     if (gpu) {
       gpu.setFogColor(haze);
+      gpu.shadows = this.settings.shadows !== false;
       gpu.begin(cam, S);
     }
 
@@ -374,7 +375,7 @@ export class Renderer3D {
    * it, so the count is fixed however far you walk.
    */
   _motes(dl, cam, world, dt) {
-    if (this.quality < 0.4) return;
+    if (this.quality < 0.4 || this._noMotes) return;
     const R = 19;
     const H = 8;
     if (!this.motes) {

@@ -182,7 +182,16 @@ for (const [name, o] of SHOTS) {
     const c = g.camera3d;
     p.pos.x = 0; p.pos.y = 0; p.z = 0;
     p.facing = Math.PI / 2; p.aim = p.facing;
+    // Whatever the pinned shots left behind, put the player in a state that can
+    // actually cast: the shots above null out actions and stop the clock, and a
+    // fighter mid-recovery silently refuses.
+    p.dead = false;
+    p.hp = p.maxHp;
     p.ce = p.maxCe;
+    p.state = 'idle';
+    p.action = null; p.cast = null; p.domainCast = null;
+    p.statuses.length = 0;
+    for (const k of Object.keys(p.cooldowns)) p.cooldowns[k] = 0;
     p.tryAbility(0, g.world);
     // drainWorld is what turns the simulation's event queue into particles;
     // stepping the world alone leaves the effects layer empty.
@@ -218,6 +227,77 @@ for (const [name, o] of SHOTS) {
      Math.abs(drift) < 6, `drift ${drift.toFixed(1)}`);
   ok('06-effects: no large region is drawn differently',
      far / n < 0.12, `${(far / n * 100).toFixed(1)}%`);
+}
+
+// Cast shadows: present, and the right tone.
+//
+// Measured by difference rather than by absolute darkness. Looking for "the
+// darkest pixels on the floor" would happily report the dark squares of a
+// checkerboard as a shadow and pass with the feature switched off, so this
+// renders the identical frame twice — shadows on, shadows off — and the
+// shadow is exactly the set of pixels that changed.
+{
+  const probe = await page.evaluate(() => {
+    const g = window.game;
+    const w = g.world;
+    const p = w.player;
+    const c = g.camera3d;
+    p.pos.x = 0; p.pos.y = 0; p.z = 0;
+    p.state = 'idle'; p.action = null;
+    for (const f of w.fighters) if (f !== p) { f.pos.x = 60; f.pos.y = 60; }
+    g.effects.clear();
+    // Across the sun's bearing, not down it: looking along the sun puts the
+    // shadow behind the figure where their own body hides it.
+    const sun = g.renderer3d.gpu.sun;
+    c.cine = 0; c.override = null; c.fpv = 0; c.trauma = 0; c.roll = 0;
+    c.shake.x = c.shake.y = c.shake.z = 0;
+    c.yaw = Math.atan2(sun[1], sun[0]) + Math.PI / 2;
+    c.pitch = 0.42; c.dist = 7;
+    c.lookAt.x = 0; c.lookAt.y = 0; c.lookAt.z = 0.7;
+    c.commit();
+    g.renderer3d.setGpu(true);
+
+    const cv = document.getElementById('game');
+    const ctx = cv.getContext('2d');
+    // Through the setting, not the backend flag: render() reads the setting
+    // into the backend at the top of every frame, so poking the backend
+    // directly is undone before a single triangle is drawn.
+    const grab = (on) => {
+      g.renderer3d.settings.shadows = on;
+      g.renderer3d.render(w, c, g.effects, 1 / 60);
+      return ctx.getImageData(0, 0, cv.width, cv.height).data;
+    };
+    const lit = grab(false);
+    const shaded = grab(true);
+    g.renderer3d.settings.shadows = true;
+
+    const L = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+    let n = 0, sumLit = 0, sumShade = 0, total = 0;
+    for (let i = 0; i < lit.length; i += 4) {
+      total++;
+      const a = L(lit, i), b = L(shaded, i);
+      // Darker with shadows on, by more than a rounding step.
+      if (a - b > 2) { n++; sumLit += a; sumShade += b; }
+    }
+    return {
+      frac: n / total,
+      lit: n ? sumLit / n : 0,
+      shade: n ? sumShade / n : 0,
+      casters: g.renderer3d.gpu.stats.casters,
+    };
+  });
+  await page.screenshot({ path: `${OUT}/07-shadow.png` });
+  console.log(`\n  shadow  covers ${(probe.frac * 100).toFixed(1)}% of the frame, `
+    + `${probe.lit.toFixed(1)} -> ${probe.shade.toFixed(1)}  (${probe.casters} casters)`);
+  ok('the shadow pass has something to cast', probe.casters > 0, `${probe.casters}`);
+  ok('turning shadows on actually darkens part of the frame',
+     probe.frac > 0.01, `${(probe.frac * 100).toFixed(2)}%`);
+  ok('a cast shadow is clearly darker than the surface it lies on',
+     probe.shade < probe.lit * 0.85,
+     `${probe.shade.toFixed(1)} vs ${probe.lit.toFixed(1)}`);
+  ok('and is a paint tone rather than a hole',
+     probe.shade > probe.lit * 0.3,
+     `${probe.shade.toFixed(1)} vs ${probe.lit.toFixed(1)}`);
 }
 
 // Last, because it advances the world: ninety frames of each backend driving

@@ -24,6 +24,7 @@
 
 import {
   MESH_VS, MESH_FS, HULL_VS, HULL_FS, LINE_VS, LINE_FS, OVERLAY_VS, OVERLAY_FS,
+  DEPTH_VS, DEPTH_FS,
 } from './shaders.js';
 import { gpuMesh, meshVao, OFFSETS, gpuLines, lineVao, LINE_OFFSETS } from './meshgpu.js';
 
@@ -141,6 +142,9 @@ export class GLBackend {
   /** Marks this as a GPU sink rather than a DrawList, for drawMesh to branch on. */
   get isGpu() { return true; }
 
+  /** Whether the blob shadows should stand down this frame. */
+  get castingShadows() { return !!(this.shadows && this.shadowFbo); }
+
   constructor(canvas) {
     this.canvas = canvas;
     this.gl = canvas.getContext('webgl2', {
@@ -162,6 +166,7 @@ export class GLBackend {
     this.hull = link(gl, HULL_VS, HULL_FS, 'hull');
     this.line = link(gl, LINE_VS, LINE_FS, 'line');
     this.overlay = link(gl, OVERLAY_VS, OVERLAY_FS, 'overlay');
+    this.depth = link(gl, DEPTH_VS, DEPTH_FS, 'depth');
 
     this.mLoc = {
       pos: gl.getAttribLocation(this.mesh, 'aPos'),
@@ -178,6 +183,10 @@ export class GLBackend {
       uAdditive: gl.getUniformLocation(this.mesh, 'uAdditive'),
       uFogRange: gl.getUniformLocation(this.mesh, 'uFogRange'),
       uFogColor: gl.getUniformLocation(this.mesh, 'uFogColor'),
+      uModel: gl.getUniformLocation(this.mesh, 'uModel'),
+      uShadow: gl.getUniformLocation(this.mesh, 'uShadow'),
+      uLightVP: gl.getUniformLocation(this.mesh, 'uLightVP'),
+      uShadowOn: gl.getUniformLocation(this.mesh, 'uShadowOn'),
     };
     this.hLoc = {
       pos: gl.getAttribLocation(this.hull, 'aPos'),
@@ -211,6 +220,22 @@ export class GLBackend {
       uViewport: gl.getUniformLocation(this.overlay, 'uViewport'),
       uDepthMap: gl.getUniformLocation(this.overlay, 'uDepthMap'),
     };
+    this.dLoc = {
+      pos: gl.getAttribLocation(this.depth, 'aPos'),
+      uLightMVP: gl.getUniformLocation(this.depth, 'uLightMVP'),
+    };
+
+    // The sun, in world space: the direction the light TRAVELS, so it points
+    // downward and across. +z is up, so the last component is negative.
+    this.sun = [0.38, 0.46, -0.80];
+    const sl = Math.hypot(this.sun[0], this.sun[1], this.sun[2]);
+    this.sun = this.sun.map((v) => v / sl);
+    this.shadows = true;
+    this.shadowRadius = 14;
+    this.shadowDepth = 60;
+    this._initShadow(1024);
+    this._mdlGl = new Float32Array(16);
+
     this._overlay = new Float32Array(4096 * OVERLAY_FLOATS);
     this._oN = 0;
     this._runs = [];
@@ -229,7 +254,10 @@ export class GLBackend {
     // front, because a transparent surface has no depth of its own to test
     // against — so it is queued rather than drawn.
     this.blended = [];
-    this.stats = { meshes: 0, hulls: 0, lines: 0, tris: 0, blended: 0, overlay: 0 };
+    this.opaque = [];
+    this.hulls = [];
+    this.lines = [];
+    this.stats = { meshes: 0, hulls: 0, lines: 0, tris: 0, blended: 0, overlay: 0, casters: 0 };
 
     this.fogColor = [16 / 255, 18 / 255, 26 / 255];
     this.width = 0;
@@ -288,8 +316,11 @@ export class GLBackend {
     this.light = opts.light;
     this.levels = [opts.ambient ?? 0.32, opts.key ?? 0.8, opts.rim ?? 0.35];
     this.blended.length = 0;
+    this.opaque.length = 0;
+    this.hulls.length = 0;
+    this.lines.length = 0;
     this.stats.meshes = this.stats.hulls = this.stats.lines = 0;
-    this.stats.tris = this.stats.blended = this.stats.overlay = 0;
+    this.stats.tris = this.stats.blended = this.stats.overlay = this.stats.casters = 0;
     this._oN = 0;
     this._runs.length = 0;
 
@@ -317,30 +348,48 @@ export class GLBackend {
    * Submit one mesh. The signature mirrors the software `drawMesh`, so the
    * call sites do not care which one they are talking to.
    */
+  /**
+   * Submit one mesh.
+   *
+   * Nothing is drawn here. The shadow map has to be built from the whole scene
+   * before any of it can be shaded, and the scene is only known once every
+   * caller has had its turn — so submissions are recorded and the frame is
+   * drawn in `end()`. Recording also means the shading options have to be
+   * snapshotted rather than referenced: the callers share one options object
+   * and mutate it between calls, setting a fog range for the props and
+   * clearing it again afterwards.
+   */
   submitMesh(mesh, mat, opts) {
     if (!mesh || !mesh.nf) return;
     const alpha = opts.alpha ?? 1;
     const additive = !!opts.additive;
-    if (alpha < 0.999 || additive) {
-      // Queue it: depth for the sort is the model origin in view space, which
-      // is what the software path sorts polygons by anyway.
-      const view = this.cam.view;
-      const d = -(view[8] * mat[3] + view[9] * mat[7] + view[10] * mat[11] + view[11]);
-      this.blended.push({
-        mesh, mat: copy16(mat), depth: d,
-        alpha, additive,
-        tint: opts.tint ? [opts.tint[0], opts.tint[1], opts.tint[2]] : null,
-        fogNear: opts.fogNear, fogFar: opts.fogFar,
-        ambient: opts.ambient, key: opts.key, rim: opts.rim,
-      });
-      return;
-    }
-    this._drawMesh(mesh, mat, opts, 1, false);
+    const view = this.cam.view;
+    const item = {
+      mesh, mat: copy16(mat),
+      depth: -(view[8] * mat[3] + view[9] * mat[7] + view[10] * mat[11] + view[11]),
+      alpha, additive,
+      tint: opts.tint ? [opts.tint[0], opts.tint[1], opts.tint[2]] : null,
+      fogNear: opts.fogNear, fogFar: opts.fogFar,
+      ambient: opts.ambient, key: opts.key, rim: opts.rim,
+      light: opts.light,
+      noShadow: !!opts.noShadow,
+    };
+    if (alpha < 0.999 || additive) this.blended.push(item);
+    else this.opaque.push(item);
   }
 
   /** Submit one outline hull. Mirrors the software `drawOutline`. */
   submitHull(mesh, mat, rgb, px, alpha = 1) {
     if (!mesh || !mesh.nf || px <= 0) return;
+    this.hulls.push({ mesh, mat: copy16(mat), rgb, px, alpha });
+  }
+
+  submitLines(mesh, mat, rgb, px, edges) {
+    if (!mesh || !mesh.nf) return;
+    this.lines.push({ mesh, mat: copy16(mat), rgb, px, edges });
+  }
+
+  _drawHull(mesh, mat, rgb, px, alpha) {
     const gl = this.gl;
     const gpu = gpuMesh(gl, mesh, this.contextId);
     const vao = meshVao(gl, gpu, 'hull', [
@@ -375,7 +424,7 @@ export class GLBackend {
    * the placket, at the corner of a shoulder — and their absence is most of
    * what makes a cel-shaded model look unfinished.
    */
-  submitLines(mesh, mat, rgb, px, edges) {
+  _drawLines(mesh, mat, rgb, px, edges) {
     const gl = this.gl;
     const lines = gpuLines(gl, mesh, this.contextId, edges);
     if (!lines.verts) return;
@@ -423,6 +472,7 @@ export class GLBackend {
     matMul4(this.cam.view, mat, this.mv);
     gl.uniformMatrix4fv(this.mLoc.uMVP, false, toGL(this.mvp, this._glMat));
     gl.uniformMatrix4fv(this.mLoc.uMV, false, toGL(this.mv, this._glMat2));
+    gl.uniformMatrix4fv(this.mLoc.uModel, false, toGL(mat, this._mdlGl));
     const L = opts.light || this.light;
     gl.uniform3f(this.mLoc.uLight, L.x, L.y, L.z);
     gl.uniform3f(this.mLoc.uLevels,
@@ -437,6 +487,11 @@ export class GLBackend {
       gl.uniform2f(this.mLoc.uFogRange, 0, 0);
     }
     gl.uniform3fv(this.mLoc.uFogColor, this.fogColor);
+    gl.uniform1i(this.mLoc.uShadow, 0);
+    gl.uniform1f(this.mLoc.uShadowOn, this._shadowOn ? 1 : 0);
+    if (this._shadowOn) {
+      gl.uniformMatrix4fv(this.mLoc.uLightVP, false, toGL(this.lightVP, this._lightGl));
+    }
 
     gl.bindVertexArray(vao);
     if (gpu.solidVerts) gl.drawArrays(gl.TRIANGLES, 0, gpu.solidVerts);
@@ -450,6 +505,150 @@ export class GLBackend {
     this.stats.tris += mesh.nf;
   }
 
+
+  // -------------------------------------------------------------------------
+  // Cast shadows.
+  //
+  // The software renderer could only ever put a dark ellipse on the ground
+  // under each fighter, because a shadow map means rendering the scene twice
+  // and it could barely afford once. This is the thing moving to the GPU
+  // actually buys the look, rather than buying frames: characters that throw a
+  // shape onto the floor, onto the props and onto each other.
+  //
+  // Two decisions keep it inside the art direction rather than beside it.
+  //
+  // The sun is in WORLD space, and it is not the key light. The cel key lives
+  // in view space — over the camera's left shoulder — which is a deliberate
+  // choice: it keeps the terminator planted on a character's face as the
+  // camera orbits them, the way an animator draws the same face the same way
+  // from any angle. A cast shadow cannot work like that. A shadow that swung
+  // around the floor as you rotated the camera would read as the world
+  // spinning. So the shading has an art-directed key and the floor has a sun,
+  // which is exactly how the shows do it.
+  //
+  // And the shadow is hard edged and lands on a band. No percentage-closer
+  // filtering, no softening: a painted shadow has an edge, and the one soft
+  // gradient in a frame of flat colour is the one thing that would look wrong.
+  // -------------------------------------------------------------------------
+
+  _initShadow(size) {
+    const gl = this.gl;
+    this.shadowSize = size;
+    this.shadowTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, size, size, 0,
+      gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    // Clamped, so a fragment sampling past the edge of the map reads the
+    // border rather than wrapping a shadow round to the far side of the arena.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    this.shadowFbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowFbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.shadowTex, 0);
+    // Depth only: with no colour attachment the framebuffer is incomplete
+    // unless both buffers are explicitly set to none.
+    gl.drawBuffers([gl.NONE]);
+    gl.readBuffer(gl.NONE);
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (!ok) {
+      this.shadowTex = null;
+      this.shadowFbo = null;
+    }
+    this.lightVP = new Float32Array(16);
+    this._lightGl = new Float32Array(16);
+  }
+
+  /**
+   * An orthographic camera looking along the sun, boxed around what the player
+   * can see.
+   *
+   * Following the camera's look point rather than covering the whole arena is
+   * what keeps the resolution usable: a box 28 metres across at 1024 texels is
+   * under three centimetres a texel, which holds an edge at the distance a
+   * fight is actually watched from. Covering a 200-metre island at the same
+   * cost would put a shadow's edge half a metre out of place.
+   */
+  _lightMatrix(cam) {
+    // The direction the light travels, which is where the shadow camera looks.
+    const f = this.sun;
+    // Any vector not parallel to f; the sun is never horizontal here.
+    const upx = 0, upy = 0, upz = 1;
+    let rx = f[1] * upz - f[2] * upy;
+    let ry = f[2] * upx - f[0] * upz;
+    let rz = f[0] * upy - f[1] * upx;
+    let rl = Math.hypot(rx, ry, rz) || 1;
+    rx /= rl; ry /= rl; rz /= rl;
+    const ux = ry * f[2] - rz * f[1];
+    const uy = rz * f[0] - rx * f[2];
+    const uz = rx * f[1] - ry * f[0];
+
+    // Centre the box a little ahead of the look point: most of what casts is
+    // in front of the camera, not behind it.
+    const cx = cam.lookAt.x, cy = cam.lookAt.y, cz = 0;
+    const R = this.shadowRadius;
+    const D = this.shadowDepth;
+    // Eye sits back along the sun so the whole box is in front of the near plane.
+    const ex = cx - f[0] * D * 0.5, ey = cy - f[1] * D * 0.5, ez = cz - f[2] * D * 0.5;
+
+    // view = basis rows, translation = -dot(axis, eye)
+    const v = this._lightView || (this._lightView = new Float32Array(16));
+    v[0] = rx; v[1] = ry; v[2] = rz; v[3] = -(rx * ex + ry * ey + rz * ez);
+    v[4] = ux; v[5] = uy; v[6] = uz; v[7] = -(ux * ex + uy * ey + uz * ez);
+    v[8] = -f[0]; v[9] = -f[1]; v[10] = -f[2]; v[11] = (f[0] * ex + f[1] * ey + f[2] * ez);
+    v[12] = 0; v[13] = 0; v[14] = 0; v[15] = 1;
+
+    // Orthographic: x,y over ±R, z over 0..D along the view's -z.
+    const o = this._lightProj || (this._lightProj = new Float32Array(16));
+    o.fill(0);
+    o[0] = 1 / R;
+    o[5] = 1 / R;
+    o[10] = -2 / D;
+    o[11] = -1;
+    o[15] = 1;
+    matMul4(o, v, this.lightVP);
+    return this.lightVP;
+  }
+
+  /** Render every opaque caster into the depth map. */
+  _shadowPass(cam) {
+    const gl = this.gl;
+    if (!this.shadowFbo) return false;
+    this._lightMatrix(cam);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowFbo);
+    gl.viewport(0, 0, this.shadowSize, this.shadowSize);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(true);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.useProgram(this.depth);
+    // Back faces into the map. The recorded depth is then the far side of
+    // whatever cast the shadow, which keeps a lit surface from shadowing
+    // itself without needing a slope-scaled bias.
+    gl.enable(gl.CULL_FACE);
+    gl.frontFace(gl.CCW);
+    gl.cullFace(gl.FRONT);
+
+    for (const it of this.opaque) {
+      if (it.noShadow) continue;
+      const gpu = gpuMesh(gl, it.mesh, this.contextId);
+      const vao = meshVao(gl, gpu, 'depth', [[this.dLoc.pos, 3, OFFSETS.pos]]);
+      matMul4(this.lightVP, it.mat, this.mvp);
+      gl.uniformMatrix4fv(this.dLoc.uLightMVP, false, toGL(this.mvp, this._lightGl));
+      gl.bindVertexArray(vao);
+      gl.drawArrays(gl.TRIANGLES, 0, gpu.totalVerts);
+      this.stats.casters++;
+    }
+    gl.bindVertexArray(null);
+    gl.cullFace(gl.BACK);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    return true;
+  }
 
   // -------------------------------------------------------------------------
   // The screen-space overlay: particles, energy shapes, spark trails.
@@ -626,23 +825,53 @@ export class GLBackend {
   }
 
   /** Finish the frame: everything blended, back to front. */
+  /**
+   * Draw the frame.
+   *
+   * Nothing above this point drew anything; it all queued. The order matters:
+   * the shadow map has to exist before a single surface is shaded, the opaque
+   * pass has to finish before anything blended can test against it, and the
+   * screen-space overlay goes last because it is the only thing that knows its
+   * own depth rather than writing one.
+   */
   end() {
     const gl = this.gl;
-    if (!this.blended.length) { this._flushOverlay(); return; }
-    this.blended.sort((a, b) => b.depth - a.depth);
-    gl.enable(gl.BLEND);
-    // Depth is still tested — a glow behind a wall stays behind it — but not
-    // written, so blended surfaces do not occlude each other.
-    gl.depthMask(false);
-    for (const b of this.blended) {
-      gl.blendFunc(gl.SRC_ALPHA, b.additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
-      this._drawMesh(b.mesh, b.mat, b, b.alpha, b.additive);
-      this.stats.blended++;
+
+    const shadowed = this.shadows && this._shadowPass(this.cam);
+    this._shadowOn = shadowed;
+    if (shadowed) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);
     }
-    gl.depthMask(true);
-    gl.disable(gl.BLEND);
-    this.blended.length = 0;
+
+    // Opaque. Submission order is irrelevant — that is what the depth buffer
+    // is for — so these go down exactly as they arrived.
+    for (const it of this.opaque) {
+      this._drawMesh(it.mesh, it.mat, it, 1, false);
+    }
+    for (const h of this.hulls) this._drawHull(h.mesh, h.mat, h.rgb, h.px, h.alpha);
+    for (const l of this.lines) this._drawLines(l.mesh, l.mat, l.rgb, l.px, l.edges);
+
+    if (this.blended.length) {
+      this.blended.sort((a, b) => b.depth - a.depth);
+      gl.enable(gl.BLEND);
+      // Depth is still tested — a glow behind a wall stays behind it — but not
+      // written, so blended surfaces do not occlude each other.
+      gl.depthMask(false);
+      for (const b of this.blended) {
+        gl.blendFunc(gl.SRC_ALPHA, b.additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
+        this._drawMesh(b.mesh, b.mat, b, b.alpha, b.additive);
+        this.stats.blended++;
+      }
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+    }
+
     this._flushOverlay();
+    this.opaque.length = 0;
+    this.hulls.length = 0;
+    this.lines.length = 0;
+    this.blended.length = 0;
   }
 }
 

@@ -134,13 +134,20 @@ export function drawFighter3(dl, cam, f, time, dt, fx, S, q) {
   const r = P.rig;
 
   // --- ground shadow --------------------------------------------------------
-  const shR = f.radius * 1.5 * (1 - clamp01(f.z / 4) * 0.45);
-  matCompose(f.pos.x, f.pos.y, 0.015, 0, 0, 0, shR, shR, 1, tmpMat);
-  S.alpha = 0.34 * fade * (1 - clamp01(f.z / 5) * 0.6);
-  S.additive = false;
-  S.tint = null;
-  drawMesh(dl, cam, shadowMesh(), tmpMat, S);
-  S.alpha = fade;
+  //
+  // A dark ellipse on the floor, which is what you draw when you cannot afford
+  // to render the scene from the sun's point of view. Where the GPU backend is
+  // casting real shadows this would sit underneath one and read as a smudge,
+  // so it stands down.
+  if (!(dl.gpu && dl.gpu.castingShadows)) {
+    const shR = f.radius * 1.5 * (1 - clamp01(f.z / 4) * 0.45);
+    matCompose(f.pos.x, f.pos.y, 0.015, 0, 0, 0, shR, shR, 1, tmpMat);
+    S.alpha = 0.34 * fade * (1 - clamp01(f.z / 5) * 0.6);
+    S.additive = false;
+    S.tint = null;
+    drawMesh(dl, cam, shadowMesh(), tmpMat, S);
+    S.alpha = fade;
+  }
 
   // --- root -----------------------------------------------------------------
   const lean = sk.lean * 0.45 + deathT * 1.42 + (P.knocked ? 0.9 : 0);

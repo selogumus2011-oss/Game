@@ -143,6 +143,23 @@ two sprite ramps are evaluated in the fragment shader rather than uploaded as
 textures, which means every particle in a frame lands in one vertex buffer
 regardless of its colour.
 
+And there are cast shadows, which is the thing the GPU actually buys the look
+rather than the frame rate. The software renderer could only put a dark ellipse
+on the floor under each fighter, because a shadow map means drawing the scene
+twice and it could barely afford once. Characters now throw a real shape onto
+the floor, onto the props and onto each other.
+
+Two decisions keep that inside the art direction. The sun is in world space and
+it is **not** the key light: the cel key lives in view space, over the camera's
+left shoulder, which keeps the terminator planted on a face as the camera
+orbits it — the way an animator draws the same face the same way from any
+angle. A cast shadow cannot work like that; one that swung around the floor as
+you rotated the camera would read as the world spinning. So the shading has an
+art-directed key and the floor has a sun, which is how the shows do it. And the
+shadow is hard edged and lands on the second paint tone rather than multiplying
+the surface down — no soft filtering, because the one smooth gradient in a
+frame of flat colour is the thing that would look wrong.
+
 Known gap: world-space text still draws through the 2D canvas over the blitted
 GL frame, so it composites without depth. Moving it needs a glyph atlas, and it
 is the one thing that wants to be legible over whatever it labels anyway.
