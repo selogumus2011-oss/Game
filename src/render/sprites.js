@@ -19,7 +19,7 @@ function parse(hex) {
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }
 
-function build(color, stops) {
+function build(color, stops, kind) {
   const c = document.createElement('canvas');
   c.width = c.height = SIZE;
   const ctx = c.getContext('2d');
@@ -28,6 +28,16 @@ function build(color, stops) {
   for (const [pos, a] of stops) grad.addColorStop(pos, `rgba(${r},${g},${b},${a})`);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, SIZE, SIZE);
+  // What this sprite IS, rather than what it was baked into.
+  //
+  // The GPU backend does not want a bitmap: a radial ramp is four mix() calls
+  // in a fragment shader, and evaluating it there means every particle in the
+  // frame lands in one vertex buffer and one draw call regardless of its
+  // colour. Uploading a hundred and twenty little textures instead would be a
+  // hundred and twenty draw calls, which is the whole cost back again. So the
+  // canvas carries its own recipe and each backend takes what it needs.
+  c.spriteKind = kind;
+  c.spriteRgb = [r, g, b];
   return c;
 }
 
@@ -35,7 +45,7 @@ function build(color, stops) {
 export function glowSprite(color) {
   let s = glowCache.get(color);
   if (!s) {
-    s = build(color, [[0, 1], [0.25, 0.75], [0.55, 0.22], [1, 0]]);
+    s = build(color, [[0, 1], [0.25, 0.75], [0.55, 0.22], [1, 0]], 1);
     glowCache.set(color, s);
     if (glowCache.size > 120) glowCache.delete(glowCache.keys().next().value);
   }
@@ -46,7 +56,7 @@ export function glowSprite(color) {
 export function softSprite(color) {
   let s = softCache.get(color);
   if (!s) {
-    s = build(color, [[0, 0.55], [0.4, 0.28], [0.75, 0.08], [1, 0]]);
+    s = build(color, [[0, 0.55], [0.4, 0.28], [0.75, 0.08], [1, 0]], 2);
     softCache.set(color, s);
     if (softCache.size > 120) softCache.delete(softCache.keys().next().value);
   }

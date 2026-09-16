@@ -275,3 +275,86 @@ uniform float uAlpha;
 out vec4 outColor;
 void main() { outColor = vec4(uInk, uAlpha); }
 `;
+
+export const OVERLAY_VS = /* glsl */`#version 300 es
+precision highp float;
+
+// Screen-space geometry that still takes part in the depth test.
+//
+// Everything the effects layer draws — particles, shards, spark trails, energy
+// shapes — is worked out in screen pixels by CPU code that projects each point
+// itself. That code is not being rewritten: it knows things about how cursed
+// energy should be drawn that a vertex shader has no business knowing. What it
+// lacked was a way to say "and this is HOW FAR AWAY it is", so a particle
+// behind a character drew over the character's face. Each vertex therefore
+// carries its screen position and its view depth, and the depth is turned back
+// into exactly the clip-space z a mesh at that distance would have produced.
+in vec2 aPos;        // device pixels, y down
+in float aDepth;     // metres in front of the eye
+in vec4 aColor;
+in vec2 aUV;         // -1..1 across a sprite quad; unused when flat
+in float aKind;      // 0 flat, 1 glow, 2 soft
+
+uniform vec2 uViewport;    // device pixels
+uniform vec2 uDepthMap;    // the projection's z row: (p10, p11)
+
+out vec4 vColor;
+out vec2 vUV;
+flat out int vKind;
+
+void main() {
+  float w = max(aDepth, 1e-3);
+  vec2 ndc = vec2(aPos.x / uViewport.x * 2.0 - 1.0,
+                  1.0 - aPos.y / uViewport.y * 2.0);
+  // clip.z for a vertex at view z = -depth, which is what the mesh pass gets
+  // from the same projection matrix. Matching it here is what makes the two
+  // sets of geometry occlude each other correctly.
+  float z = uDepthMap.x * (-aDepth) + uDepthMap.y;
+  gl_Position = vec4(ndc * w, z, w);
+  vColor = aColor;
+  vUV = aUV;
+  vKind = int(aKind + 0.5);
+}
+`;
+
+export const OVERLAY_FS = /* glsl */`#version 300 es
+precision highp float;
+
+in vec4 vColor;
+in vec2 vUV;
+flat in int vKind;
+
+out vec4 outColor;
+
+/**
+ * The two sprite ramps, as functions rather than as bitmaps.
+ *
+ * These are the exact stop lists the canvas gradients are built from in
+ * ../../render/sprites.js — a hard-cored glow for sparks and orbs, a soft haze
+ * with no hot centre for auras and smoke. A radial gradient is piecewise
+ * linear in the radius, so reproducing one is a chain of mixes.
+ */
+float ramp(float r, int kind) {
+  if (kind == 1) {
+    // [0, 1] [0.25, 0.75] [0.55, 0.22] [1, 0]
+    if (r < 0.25) return mix(1.0, 0.75, r / 0.25);
+    if (r < 0.55) return mix(0.75, 0.22, (r - 0.25) / 0.30);
+    return mix(0.22, 0.0, (r - 0.55) / 0.45);
+  }
+  // [0, 0.55] [0.4, 0.28] [0.75, 0.08] [1, 0]
+  if (r < 0.40) return mix(0.55, 0.28, r / 0.40);
+  if (r < 0.75) return mix(0.28, 0.08, (r - 0.40) / 0.35);
+  return mix(0.08, 0.0, (r - 0.75) / 0.25);
+}
+
+void main() {
+  vec4 c = vColor;
+  if (vKind != 0) {
+    float r = length(vUV);
+    if (r > 1.0) discard;
+    c.a *= ramp(r, vKind);
+  }
+  if (c.a <= 0.002) discard;
+  outColor = vec4(c.rgb, c.a);
+}
+`;

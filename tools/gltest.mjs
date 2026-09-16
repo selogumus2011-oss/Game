@@ -169,6 +169,57 @@ for (const [name, o] of SHOTS) {
   ok(`${name}: the GPU frame is not blank`, meanB > 4, `mean ${meanB.toFixed(1)}`);
 }
 
+// A frame with the effects layer actually doing something.
+//
+// Every shot above clears the effects so the comparison is about geometry, and
+// that means none of them touch the particle path at all — which is most of
+// what the overlay draws. This one fires a technique, lets the sparks live a
+// few frames, then freezes and renders that one state through both backends.
+{
+  const built = await page.evaluate(async () => {
+    const g = window.game;
+    const p = g.world.player;
+    const c = g.camera3d;
+    p.pos.x = 0; p.pos.y = 0; p.z = 0;
+    p.facing = Math.PI / 2; p.aim = p.facing;
+    p.ce = p.maxCe;
+    p.tryAbility(0, g.world);
+    // drainWorld is what turns the simulation's event queue into particles;
+    // stepping the world alone leaves the effects layer empty.
+    for (let i = 0; i < 26; i++) {
+      g.world.update(1 / 60);
+      g.drainWorld(g.world);
+      g.effects.update(1 / 60);
+    }
+    c.cine = 0; c.override = null; c.fpv = 0; c.trauma = 0; c.roll = 0;
+    c.shake.x = c.shake.y = c.shake.z = 0;
+    c.yaw = -Math.PI / 2 + 0.4; c.pitch = 0.12; c.dist = 5;
+    c.lookAt.x = 0; c.lookAt.y = 1.2; c.lookAt.z = 1.2;
+    c.commit();
+    return { particles: g.effects.particles.length };
+  });
+  const cpu = await shoot(false);
+  await page.screenshot({ path: `${OUT}/06-effects-cpu.png` });
+  const gpu = await shoot(true);
+  await page.screenshot({ path: `${OUT}/06-effects-gpu.png` });
+  let sa = 0, sb = 0, n = 0, far = 0;
+  for (let i = 0; i < cpu.data.length; i += 4) {
+    const a2 = lum(cpu.data, i), b2 = lum(gpu.data, i);
+    sa += a2; sb += b2; n++;
+    if (Math.abs(a2 - b2) > 24) far++;
+  }
+  const drift = sb / n - sa / n;
+  console.log(`  06-effects  ${(sa / n).toFixed(1).padStart(7)}   ${(sb / n).toFixed(1).padStart(7)}`
+    + `   ${(drift >= 0 ? '+' : '') + drift.toFixed(1)}`.padStart(8)
+    + `   ${(far / n * 100).toFixed(1)}%`.padStart(10)
+    + `   (${built.particles} particles)`);
+  ok('the effects layer has something to draw', built.particles > 0, `${built.particles}`);
+  ok('06-effects: the two backends agree on overall value',
+     Math.abs(drift) < 6, `drift ${drift.toFixed(1)}`);
+  ok('06-effects: no large region is drawn differently',
+     far / n < 0.12, `${(far / n * 100).toFixed(1)}%`);
+}
+
 // Last, because it advances the world: ninety frames of each backend driving
 // the whole pipeline — HUD, effects and all — which is what catches the
 // errors a still frame never reaches. Running it first would leave the fight

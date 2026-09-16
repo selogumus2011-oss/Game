@@ -132,9 +132,20 @@ missing, it is **faster** where the GPU is emulated in software (measured at
 reporting SwiftShader or llvmpipe gets it automatically), and it is the
 reference: where the two disagree, it is right and the shader has a bug.
 
-Known gap: particles, sprites and world-space text still draw through the 2D
-canvas over the blitted GL frame, so they composite without depth against
-geometry. Geometry, outlines and interior lines are all on the GPU.
+The effects layer is on the GPU too, and it did not have to be rewritten to get
+there. Particles, energy shapes and spark trails are worked out in screen
+pixels by code that knows things about how cursed energy should be drawn that a
+vertex shader has no business knowing; all it lacked was a way to say how far
+away a thing was. Each vertex now carries its view depth, which is turned back
+into exactly the clip-space z a mesh at that distance would have produced — so
+a particle behind a character is behind them, rather than over their face. The
+two sprite ramps are evaluated in the fragment shader rather than uploaded as
+textures, which means every particle in a frame lands in one vertex buffer
+regardless of its colour.
+
+Known gap: world-space text still draws through the 2D canvas over the blitted
+GL frame, so it composites without depth. Moving it needs a glyph atlas, and it
+is the one thing that wants to be legible over whatever it labels anyway.
 
 ---
 

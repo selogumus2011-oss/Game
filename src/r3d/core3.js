@@ -509,6 +509,11 @@ export class DrawList {
   constructor() {
     this.items = [];
     this.n = 0;
+    // When a GPU backend is attached, everything that can take part in the
+    // depth test is forwarded to it and only text stays here. Text is the one
+    // thing that would need a glyph atlas to move, and the one thing that
+    // wants to be legible over the top of whatever it labels anyway.
+    this.gpu = null;
   }
 
   reset() { this.n = 0; }
@@ -533,6 +538,7 @@ export class DrawList {
    * something somebody painted.
    */
   poly(z, xs, count, style, add = false, alpha = 1, ink = null, inkW = 1.6) {
+    if (this.gpu) { this.gpu.poly2d(z, xs, count, style, add, alpha, ink, inkW); return null; }
     const it = this._next();
     it.kind = KIND_POLY;
     it.z = z;
@@ -547,6 +553,7 @@ export class DrawList {
   }
 
   sprite(z, x, y, w, h, sprite, alpha, add = true, rot = 0) {
+    if (this.gpu) { this.gpu.sprite2d(z, x, y, w, h, sprite, alpha, add, rot); return null; }
     const it = this._next();
     it.kind = KIND_SPRITE;
     it.z = z;
@@ -562,6 +569,7 @@ export class DrawList {
   }
 
   line(z, x1, y1, x2, y2, style, lw, add = false, alpha = 1) {
+    if (this.gpu) { this.gpu.line2d(z, x1, y1, x2, y2, style, lw, add, alpha); return null; }
     const it = this._next();
     it.kind = KIND_LINE;
     it.z = z;

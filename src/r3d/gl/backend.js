@@ -22,10 +22,43 @@
 //     the software renderer and the one quality tiers kept trying to drop. On
 //     the GPU it is a second draw of geometry already resident.
 
-import { MESH_VS, MESH_FS, HULL_VS, HULL_FS, LINE_VS, LINE_FS } from './shaders.js';
+import {
+  MESH_VS, MESH_FS, HULL_VS, HULL_FS, LINE_VS, LINE_FS, OVERLAY_VS, OVERLAY_FS,
+} from './shaders.js';
 import { gpuMesh, meshVao, OFFSETS, gpuLines, lineVao, LINE_OFFSETS } from './meshgpu.js';
 
 let nextContextId = 1;
+
+// x, y, depth, rgba, uv, kind
+const OVERLAY_FLOATS = 10;
+
+/**
+ * A CSS colour to premultiplied-free rgba in 0..1.
+ *
+ * The effects layer speaks in canvas colour strings, and it is not worth
+ * changing a few hundred call sites to make them speak in numbers instead.
+ * Parsing is cached because the same handful of strings recur every frame.
+ */
+const styleCache = new Map();
+function parseStyle(style) {
+  if (!style) return null;
+  let c = styleCache.get(style);
+  if (c !== undefined) return c;
+  c = null;
+  const m = /^rgba?\(([^)]+)\)$/.exec(style);
+  if (m) {
+    const n = m[1].split(',').map((v) => parseFloat(v));
+    if (n.length >= 3) c = [n[0] / 255, n[1] / 255, n[2] / 255, n.length > 3 ? n[3] : 1];
+  } else if (style[0] === '#') {
+    const h = style.slice(1);
+    const x = h.length === 3 ? h.split('').map((v) => parseInt(v + v, 16))
+      : [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    if (x.every((v) => v === v)) c = [x[0] / 255, x[1] / 255, x[2] / 255, 1];
+  }
+  styleCache.set(style, c);
+  if (styleCache.size > 4000) styleCache.clear();
+  return c;
+}
 
 function compile(gl, type, src, label) {
   const sh = gl.createShader(type);
@@ -128,6 +161,7 @@ export class GLBackend {
     this.mesh = link(gl, MESH_VS, MESH_FS, 'mesh');
     this.hull = link(gl, HULL_VS, HULL_FS, 'hull');
     this.line = link(gl, LINE_VS, LINE_FS, 'line');
+    this.overlay = link(gl, OVERLAY_VS, OVERLAY_FS, 'overlay');
 
     this.mLoc = {
       pos: gl.getAttribLocation(this.mesh, 'aPos'),
@@ -168,6 +202,21 @@ export class GLBackend {
       uAlpha: gl.getUniformLocation(this.line, 'uAlpha'),
     };
 
+    this.oLoc = {
+      pos: gl.getAttribLocation(this.overlay, 'aPos'),
+      depth: gl.getAttribLocation(this.overlay, 'aDepth'),
+      color: gl.getAttribLocation(this.overlay, 'aColor'),
+      uv: gl.getAttribLocation(this.overlay, 'aUV'),
+      kind: gl.getAttribLocation(this.overlay, 'aKind'),
+      uViewport: gl.getUniformLocation(this.overlay, 'uViewport'),
+      uDepthMap: gl.getUniformLocation(this.overlay, 'uDepthMap'),
+    };
+    this._overlay = new Float32Array(4096 * OVERLAY_FLOATS);
+    this._oN = 0;
+    this._runs = [];
+    this._oBuf = gl.createBuffer();
+    this._oVao = null;
+
     this.proj = new Float32Array(16);
     this.viewProj = new Float32Array(16);
     this.mvp = new Float32Array(16);
@@ -180,7 +229,7 @@ export class GLBackend {
     // front, because a transparent surface has no depth of its own to test
     // against — so it is queued rather than drawn.
     this.blended = [];
-    this.stats = { meshes: 0, hulls: 0, lines: 0, tris: 0, blended: 0 };
+    this.stats = { meshes: 0, hulls: 0, lines: 0, tris: 0, blended: 0, overlay: 0 };
 
     this.fogColor = [16 / 255, 18 / 255, 26 / 255];
     this.width = 0;
@@ -240,7 +289,9 @@ export class GLBackend {
     this.levels = [opts.ambient ?? 0.32, opts.key ?? 0.8, opts.rim ?? 0.35];
     this.blended.length = 0;
     this.stats.meshes = this.stats.hulls = this.stats.lines = 0;
-    this.stats.tris = this.stats.blended = 0;
+    this.stats.tris = this.stats.blended = this.stats.overlay = 0;
+    this._oN = 0;
+    this._runs.length = 0;
 
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.enable(gl.DEPTH_TEST);
@@ -399,10 +450,185 @@ export class GLBackend {
     this.stats.tris += mesh.nf;
   }
 
+
+  // -------------------------------------------------------------------------
+  // The screen-space overlay: particles, energy shapes, spark trails.
+  //
+  // These arrive already projected — the effects layer works in pixels — so
+  // they cannot go through the mesh pass. They go into one growable vertex
+  // buffer instead, carrying their view depth so the depth test still applies,
+  // and they are drawn once at the end of the frame. One buffer and a handful
+  // of draw calls for the whole effects layer, whatever its colour.
+  // -------------------------------------------------------------------------
+
+  /** Room for `verts` more vertices, growing the scratch buffer if need be. */
+  _room(verts) {
+    const need = (this._oN + verts) * OVERLAY_FLOATS;
+    if (need <= this._overlay.length) return;
+    let size = Math.max(this._overlay.length * 2, 4096 * OVERLAY_FLOATS);
+    while (size < need) size *= 2;
+    const next = new Float32Array(size);
+    next.set(this._overlay.subarray(0, this._oN * OVERLAY_FLOATS));
+    this._overlay = next;
+  }
+
+  _vert(x, y, depth, r, g, b, a, u, v, kind) {
+    const o = this._oN * OVERLAY_FLOATS;
+    const d = this._overlay;
+    d[o] = x; d[o + 1] = y; d[o + 2] = depth;
+    d[o + 3] = r; d[o + 4] = g; d[o + 5] = b; d[o + 6] = a;
+    d[o + 7] = u; d[o + 8] = v; d[o + 9] = kind;
+    this._oN++;
+  }
+
+  /** Open a run of triangles sharing a blend mode and a sort depth. */
+  _run(depth, add) {
+    const last = this._runs[this._runs.length - 1];
+    if (last && last.add === add && last.depth === depth && last.end === this._oN) return last;
+    const run = { depth, add, start: this._oN, end: this._oN };
+    this._runs.push(run);
+    return run;
+  }
+
+  _close(run) { run.end = this._oN; }
+
+  poly2d(depth, xs, count, style, add, alpha, ink, inkW) {
+    if (count < 3 || alpha <= 0.002) return;
+    const c = parseStyle(style);
+    if (!c) return;
+    const run = this._run(depth, !!add);
+    this._room((count - 2) * 3 + (ink ? count * 6 : 0));
+    const a = c[3] * alpha;
+    // Fan from the first point. Every shape the effects layer draws is convex
+    // or near enough that a fan is indistinguishable from a real triangulation.
+    for (let i = 1; i < count - 1; i++) {
+      this._vert(xs[0], xs[1], depth, c[0], c[1], c[2], a, 0, 0, 0);
+      this._vert(xs[i * 2], xs[i * 2 + 1], depth, c[0], c[1], c[2], a, 0, 0, 0);
+      this._vert(xs[i * 2 + 2], xs[i * 2 + 3], depth, c[0], c[1], c[2], a, 0, 0, 0);
+    }
+    if (ink) {
+      // Cursed energy is drawn, not rendered: it has a hard contour the same
+      // way a character does, and a shape without one reads as a light source
+      // rather than as something somebody painted.
+      const k = parseStyle(ink);
+      if (k) {
+        for (let i = 0; i < count; i++) {
+          const j = (i + 1) % count;
+          this._segment(xs[i * 2], xs[i * 2 + 1], xs[j * 2], xs[j * 2 + 1],
+            depth, k[0], k[1], k[2], k[3] * alpha, inkW);
+        }
+      }
+    }
+    this._close(run);
+  }
+
+  line2d(depth, x1, y1, x2, y2, style, lw, add, alpha) {
+    if (alpha <= 0.002) return;
+    const c = parseStyle(style);
+    if (!c) return;
+    const run = this._run(depth, !!add);
+    this._room(6);
+    this._segment(x1, y1, x2, y2, depth, c[0], c[1], c[2], c[3] * alpha, lw);
+    this._close(run);
+  }
+
+  /** One thick screen-space segment as two triangles. */
+  _segment(x1, y1, x2, y2, depth, r, g, b, a, lw) {
+    this._room(6);
+    let dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-4) { dx = 1; dy = 0; } else { dx /= len; dy /= len; }
+    const hw = Math.max(0.5, lw) * 0.5;
+    const nx = -dy * hw, ny = dx * hw;
+    const ax = x1 + nx, ay = y1 + ny, bx = x2 + nx, by = y2 + ny;
+    const cx = x2 - nx, cy = y2 - ny, ex = x1 - nx, ey = y1 - ny;
+    this._vert(ax, ay, depth, r, g, b, a, 0, 0, 0);
+    this._vert(bx, by, depth, r, g, b, a, 0, 0, 0);
+    this._vert(cx, cy, depth, r, g, b, a, 0, 0, 0);
+    this._vert(ax, ay, depth, r, g, b, a, 0, 0, 0);
+    this._vert(cx, cy, depth, r, g, b, a, 0, 0, 0);
+    this._vert(ex, ey, depth, r, g, b, a, 0, 0, 0);
+  }
+
+  sprite2d(depth, x, y, w, h, sprite, alpha, add, rot) {
+    if (alpha <= 0.002 || w <= 0.2) return;
+    const kind = sprite && sprite.spriteKind;
+    const rgb = sprite && sprite.spriteRgb;
+    if (!kind || !rgb) return;
+    const run = this._run(depth, !!add);
+    this._room(6);
+    const hw = w * 0.5, hh = h * 0.5;
+    const px = x, py = y;
+    const cs = rot ? Math.cos(rot) : 1, sn = rot ? Math.sin(rot) : 0;
+    const r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255;
+    // Corners in local -1..1, which the fragment shader reads as the radius
+    // for the falloff.
+    const C = [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]];
+    for (const [u, v] of C) {
+      const ox = u * hw, oy = v * hh;
+      this._vert(px + ox * cs - oy * sn, py + ox * sn + oy * cs,
+        depth, r, g, b, alpha, u, v, kind);
+    }
+    this._close(run);
+  }
+
+  /** Draw everything the overlay collected, far to near. */
+  _flushOverlay() {
+    const gl = this.gl;
+    if (!this._oN) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._oBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, this._overlay.subarray(0, this._oN * OVERLAY_FLOATS),
+      gl.DYNAMIC_DRAW);
+    if (!this._oVao) {
+      this._oVao = gl.createVertexArray();
+      gl.bindVertexArray(this._oVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this._oBuf);
+      const S = OVERLAY_FLOATS * 4;
+      const at = [[this.oLoc.pos, 2, 0], [this.oLoc.depth, 1, 8], [this.oLoc.color, 4, 12],
+                  [this.oLoc.uv, 2, 28], [this.oLoc.kind, 1, 36]];
+      for (const [loc, size, off] of at) {
+        if (loc < 0) continue;
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, size, gl.FLOAT, false, S, off);
+      }
+      gl.bindVertexArray(null);
+    }
+
+    gl.useProgram(this.overlay);
+    // CSS pixels, because that is what the effects layer projects into.
+    // Normalised device coordinates do not care which unit you measure the
+    // viewport in, so long as the positions agree with it.
+    gl.uniform2f(this.oLoc.uViewport, this.width, this.height);
+    gl.uniform2f(this.oLoc.uDepthMap, this.proj[10], this.proj[11]);
+    gl.bindVertexArray(this._oVao);
+    gl.enable(gl.BLEND);
+    gl.depthMask(false);
+    gl.disable(gl.CULL_FACE);
+
+    // Far to near, so alpha-blended shapes lay over one another the way the
+    // painter's-algorithm list did. Additive runs do not care about order, but
+    // sorting them along with the rest costs nothing and keeps one code path.
+    const runs = this._runs.filter((r) => r.end > r.start).sort((a, b) => b.depth - a.depth);
+    let addState = null;
+    for (const r of runs) {
+      if (r.add !== addState) {
+        gl.blendFunc(gl.SRC_ALPHA, r.add ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
+        addState = r.add;
+      }
+      gl.drawArrays(gl.TRIANGLES, r.start, r.end - r.start);
+      this.stats.overlay++;
+    }
+
+    gl.enable(gl.CULL_FACE);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
+  }
+
   /** Finish the frame: everything blended, back to front. */
   end() {
     const gl = this.gl;
-    if (!this.blended.length) return;
+    if (!this.blended.length) { this._flushOverlay(); return; }
     this.blended.sort((a, b) => b.depth - a.depth);
     gl.enable(gl.BLEND);
     // Depth is still tested — a glow behind a wall stays behind it — but not
@@ -416,6 +642,7 @@ export class GLBackend {
     gl.depthMask(true);
     gl.disable(gl.BLEND);
     this.blended.length = 0;
+    this._flushOverlay();
   }
 }
 
