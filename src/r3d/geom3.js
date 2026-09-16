@@ -307,6 +307,14 @@ function ensureScratch(n) {
  * @param opts.fog        0..1 blend toward the fog colour with distance
  */
 export function drawMesh(dl, cam, mesh, mat, opts) {
+  // The seam between the two renderers.
+  //
+  // Every mesh in the game arrives here, so this one branch is the whole of
+  // what the GPU path had to change. The models, the skeleton, the poses, the
+  // lighting levels and every number in the art direction are shared: the
+  // backend decides who fills the triangles and nothing else.
+  if (dl.gpu) { dl.gpu.submitMesh(mesh, mat, opts); return; }
+
   const nv = mesh.nv;
   ensureScratch(nv);
   const view = cam.view;
@@ -445,7 +453,11 @@ export function drawMesh(dl, cam, mesh, mat, opts) {
  */
 const CREASE_COS = Math.cos(0.9);        // about 52 degrees
 
-function inkEdges(mesh) {
+// Exported because the GPU backend draws the same lines from the same list.
+// This is mesh analysis rather than rasterising — which edges of a shape an
+// inker would draw is a property of the shape, not of who fills the triangles
+// — so both renderers share it and the cache on the mesh serves both.
+export function inkEdges(mesh) {
   let e = mesh._edges;
   if (e !== undefined) return e;
 
@@ -540,6 +552,16 @@ function inkEdges(mesh) {
  */
 export function drawOutline(dl, cam, mesh, mat, scale = 1.0, color = [10, 10, 14], px = 2.2,
   interior = true) {
+  if (dl.gpu) {
+    const ink = inkRgb(mesh, color);
+    dl.gpu.submitHull(mesh, mat, ink, px);
+    // Same edge list the software path walks. Which edges of a shape an inker
+    // would draw is a property of the shape, so both renderers ask the same
+    // question and share the answer cached on the mesh.
+    if (interior) dl.gpu.submitLines(mesh, mat, ink, px, inkEdges(mesh));
+    return;
+  }
+
   const nv = mesh.nv;
   ensureScratch(nv);
   const view = cam.view;
@@ -652,22 +674,34 @@ export function drawOutline(dl, cam, mesh, mat, scale = 1.0, color = [10, 10, 14
  * The mesh's own average colour is a good enough stand-in for "the local
  * tone", and it is cached on the mesh because it never changes.
  */
-function inkStyle(mesh, base) {
-  let s = mesh._ink;
-  if (s === undefined) {
+function inkRgb(mesh, base) {
+  let c = mesh._inkRgb;
+  if (c === undefined) {
     let r = 0, g = 0, b = 0;
     const n = mesh.nf || 1;
     for (let i = 0; i < n; i++) {
-      const c = mesh.fc[i];
-      r += c[0]; g += c[1]; b += c[2];
+      const f = mesh.fc[i];
+      r += f[0]; g += f[1]; b += f[2];
     }
     r /= n; g /= n; b /= n;
     // A quarter of the way toward the local tone: enough to warm or cool the
     // line, not enough to stop it reading as a line.
     const k = 0.25;
-    s = `rgb(${Math.round(base[0] + (r - base[0]) * k)},`
-      + `${Math.round(base[1] + (g - base[1]) * k)},`
-      + `${Math.round(base[2] + (b - base[2]) * k)})`;
+    c = [
+      Math.round(base[0] + (r - base[0]) * k),
+      Math.round(base[1] + (g - base[1]) * k),
+      Math.round(base[2] + (b - base[2]) * k),
+    ];
+    mesh._inkRgb = c;
+  }
+  return c;
+}
+
+function inkStyle(mesh, base) {
+  let s = mesh._ink;
+  if (s === undefined) {
+    const c = inkRgb(mesh, base);
+    s = `rgb(${c[0]},${c[1]},${c[2]})`;
     mesh._ink = s;
   }
   return s;

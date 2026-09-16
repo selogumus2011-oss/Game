@@ -53,6 +53,14 @@ class Game {
       onResume: () => this.resume(),
       onQuit: () => this.quitToMenu(),
       onSettings: (s) => this.applySettings(s),
+      // The GPU toggle can be refused — a machine whose browser reports a
+      // software renderer is faster on the hand-written rasteriser — so the
+      // menu asks rather than assumes.
+      gpuState: () => ({
+        on: this.renderer3d.useGpu,
+        available: !!this.renderer3d.gpu,
+        why: this.renderer3d.gpuError || '',
+      }),
       onHover: () => audio.play('ui', { volume: 0.3, throttle: 40 }),
     });
     this.applySettings(this.ui.settings);
@@ -103,6 +111,7 @@ class Game {
     this.cinematic.enabled = s.cutscenes !== false;
     this.flashCine.enabled = s.cutscenes !== false;
     this.setRenderMode(s.render3d !== false);
+    this.renderer3d.setGpu(s.gpu !== false);
     if (!!s.firstPerson !== this.firstPerson) this.setFirstPerson(!!s.firstPerson);
     for (const r of [this.renderer2d, this.renderer3d]) {
       r.settings.grain = s.grain;

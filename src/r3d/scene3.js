@@ -18,6 +18,7 @@ import { drawDomain3, setDomainQuality3 } from './domains3.js';
 import { drawProjectiles3, drawSummonLinks3, drawTelegraphs3 } from './props3.js';
 import { shade } from './models3.js';
 import { pickDpr, softSprite } from '../render/sprites.js';
+import { GLBackend, detectGpu } from './gl/backend.js';
 
 /**
  * The horizon colour for an arena, as rgb.
@@ -84,7 +85,48 @@ export class Renderer3D {
     // View-space key light: over the camera's left shoulder and slightly down.
     this.light = { x: -0.44, y: 0.62, z: 0.65 };
     this.shadeOpts = makeShade(this.light);
+
+    // The GPU path.
+    //
+    // It renders into a canvas that is never in the document: the frame is
+    // blitted onto the 2D one before anything else is drawn. That keeps every
+    // screen-space pass downstream — bloom, the grade, weather, the vignette,
+    // the whole HUD — working against a single 2D canvas exactly as before,
+    // which is the difference between a contained change and a rewrite of the
+    // presentation layer.
+    //
+    // A machine without WebGL2 keeps the software rasteriser. It is not dead
+    // weight: it is the fallback, and it is also the reference — when the two
+    // disagree about what a frame should look like, it is right.
+    this.gpu = null;
+    this.gpuError = null;
+    // ?gpu=1 forces it on and ?gpu=0 off, which is how the harnesses exercise
+    // both paths on a machine that would otherwise only ever pick one.
+    const forced = typeof location !== 'undefined'
+      ? new URLSearchParams(location.search).get('gpu') : null;
+    const detected = detectGpu();
+    const want = forced === '1' ? true : forced === '0' ? false : detected.ok;
+    this.gpuInfo = detected;
+    if (want && forced !== '0') {
+      try {
+        this.glCanvas = document.createElement('canvas');
+        this.gpu = new GLBackend(this.glCanvas);
+      } catch (e) {
+        this.gpu = null;
+        this.gpuError = e.message;
+      }
+    }
+    if (!this.gpu && !this.gpuError) this.gpuError = detected.reason;
+    this.useGpu = !!this.gpu;
+
     this.resize();
+  }
+
+  /** Switch backends at runtime. Returns whether the GPU path is now on. */
+  setGpu(on) {
+    this.useGpu = !!(on && this.gpu);
+    this.resize();
+    return this.useGpu;
   }
 
   resize() {
@@ -97,6 +139,7 @@ export class Renderer3D {
     this.width = w;
     this.height = h;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    if (this.gpu) this.gpu.resize(w, h, this.dpr);
     this._makeGrain();
     this._makeVignette();
   }
@@ -202,11 +245,22 @@ export class Renderer3D {
     // that space's air. Standing in Malevolent Shrine, distance should go red
     // and black; standing in Unlimited Void it should go white.
     const here = domainAt(world, cam.pos.x, cam.pos.y);
-    setFogColor(here ? domainHaze(here) : hazeRgb(world.arena));
+    const haze = here ? domainHaze(here) : hazeRgb(world.arena);
+    setFogColor(haze);
     drawSky(ctx, cam, world.arena, W, H);
 
     const dl = this.dl;
     dl.reset();
+
+    // On the GPU path the draw calls below go to the backend instead of into
+    // the list; `dl` still collects the things that are not meshes — sprites,
+    // particles, world-space text — and they are painted over the blit.
+    const gpu = this.useGpu ? this.gpu : null;
+    dl.gpu = gpu;
+    if (gpu) {
+      gpu.setFogColor(haze);
+      gpu.begin(cam, S);
+    }
 
     drawGround3(dl, cam, world, S, this.q);
 
@@ -243,6 +297,14 @@ export class Renderer3D {
       ctx.translate(W / 2, H / 2);
       ctx.rotate(cam.roll);
       ctx.translate(-W / 2, -H / 2);
+    }
+    if (gpu) {
+      gpu.end();
+      // Over the sky, under everything the draw list still holds. The roll is
+      // applied to the blit rather than baked into the projection so that a
+      // rolled camera turns the sky and the 3D together, the way it did when
+      // both were painted through the same 2D transform.
+      ctx.drawImage(this.glCanvas, 0, 0, W, H);
     }
     dl.flush(ctx);
     ctx.restore();

@@ -1,0 +1,277 @@
+// The cel shader, as GLSL.
+//
+// This is a transcription, not a redesign. Every number in here is lifted from
+// the software rasteriser in ../core3.js and ../geom3.js, because the point of
+// moving to the GPU is to draw the same picture faster — not to draw a
+// different one. Where the two paths disagree the software one is right and
+// this is the bug.
+//
+// Three things are worth knowing before reading it:
+//
+//   * **Shading is flat, per face.** The models carry one colour and one
+//     normal per triangle and nothing is smoothed, so every varying that
+//     crosses the boundary is `flat` and the normal is rebuilt in the vertex
+//     shader from two edge vectors rather than interpolated.
+//   * **The normal is derived, not supplied.** The two edges are transformed
+//     by the modelview and crossed there. Limbs are scaled non-uniformly by
+//     their bone width, and a normal transformed by such a matrix is wrong
+//     unless you use the inverse transpose; crossing the transformed edges
+//     sidesteps that and matches what the software path computes from the
+//     projected triangle.
+//   * **There is no gamma anywhere.** The software path composes colours as
+//     plain 0–255 sRGB values with no linearisation, and the canvas shows them
+//     as-is. Doing it properly here would be more correct and would not match,
+//     so this does not do it properly.
+
+/** Shared between the two programs: the band table and the fog blend. */
+const CEL = /* glsl */`
+// The five paint tones. x scales the value, yzw tint it — the shadow bands
+// pull hard toward violet, which is what makes a shadow read as painted
+// rather than as the same colour turned down.
+const vec4 BANDS[5] = vec4[5](
+  vec4(0.52, 0.74, 0.82, 1.30),
+  vec4(0.74, 0.86, 0.92, 1.18),
+  vec4(1.00, 1.00, 1.00, 1.00),
+  vec4(1.16, 1.04, 1.02, 0.97),
+  vec4(1.70, 1.14, 1.10, 1.04)
+);
+
+// The cuts are deliberately uneven: the first is the terminator and wants to
+// be crisp, and the base band is wide so a lit surface stays flat across its
+// whole area instead of drifting a band as it curves.
+int bandOf(float l) {
+  if (l < 0.56) return 0;
+  if (l < 0.80) return 1;
+  if (l < 1.14) return 2;
+  if (l < 1.36) return 3;
+  return 4;
+}
+
+// Haze blends toward the sky rather than multiplying toward black. Darkening
+// with distance reads as "the lights went out"; blending toward the horizon
+// reads as air.
+vec3 hazed(vec3 c, float depth, vec2 fogRange, vec3 fogColor) {
+  if (fogRange.y <= fogRange.x) return c;
+  float t = clamp((depth - fogRange.x) / max(1.0, fogRange.y - fogRange.x), 0.0, 1.0);
+  return mix(c, fogColor, t);
+}
+`;
+
+export const MESH_VS = /* glsl */`#version 300 es
+precision highp float;
+
+in vec3 aPos;
+in vec3 aEdge1;      // b - a, in model space
+in vec3 aEdge2;      // c - a, in model space
+in vec3 aColor;      // the authored face colour, 0..1
+in vec2 aFlags;      // x: emissive, y: unused
+
+uniform mat4 uMVP;
+uniform mat4 uMV;
+
+flat out vec3 vColor;
+flat out vec3 vNormal;    // view space, already flipped to face the camera
+flat out float vEmissive;
+out float vDepth;
+
+void main() {
+  vec4 viewPos = uMV * vec4(aPos, 1.0);
+  // Depth as the software path measures it: distance in front of the eye.
+  vDepth = -viewPos.z;
+
+  vec3 e1 = (uMV * vec4(aEdge1, 0.0)).xyz;
+  vec3 e2 = (uMV * vec4(aEdge2, 0.0)).xyz;
+  vec3 n = cross(e1, e2);
+  float len = length(n);
+  n = len > 0.0 ? n / len : vec3(0.0, 0.0, 1.0);
+  // The software path flips the normal toward the camera rather than trusting
+  // the winding, so double-sided faces light the same from either side.
+  if (n.z < 0.0) n = -n;
+  vNormal = n;
+
+  vColor = aColor;
+  vEmissive = aFlags.x;
+  gl_Position = uMVP * vec4(aPos, 1.0);
+}
+`;
+
+export const MESH_FS = /* glsl */`#version 300 es
+precision highp float;
+
+${CEL}
+
+flat in vec3 vColor;
+flat in vec3 vNormal;
+flat in float vEmissive;
+in float vDepth;
+
+uniform vec3 uLight;        // view-space key direction
+uniform vec3 uLevels;       // ambient, key, rim
+uniform vec3 uTint;
+uniform float uAlpha;
+uniform float uAdditive;    // 1.0 skips lighting entirely, as the software path does
+uniform vec2 uFogRange;
+uniform vec3 uFogColor;
+
+// Rim is a painted shape, not a falloff. A smooth term slides a surface
+// through the bands as it curves away, which is a gradient by another name; a
+// hard test snaps the edge into the rim band and leaves the inside alone.
+const float RIM_EDGE = 0.62;
+
+out vec4 outColor;
+
+void main() {
+  float light = 1.0;
+  if (uAdditive < 0.5) {
+    float d = dot(vNormal, uLight);
+    light = uLevels.x + uLevels.y * max(0.0, d);
+    if (uLevels.z > 0.0 && 1.0 - vNormal.z > RIM_EDGE) light += uLevels.z * 1.7;
+    if (vEmissive > 0.0) light = mix(light, 1.45, vEmissive);
+  }
+
+  vec4 band = BANDS[bandOf(light)];
+  vec3 c = clamp(vColor * band.x * band.yzw * uTint, 0.0, 1.0);
+  c = hazed(c, vDepth, uFogRange, uFogColor);
+  outColor = vec4(c, uAlpha);
+}
+`;
+
+export const HULL_VS = /* glsl */`#version 300 es
+precision highp float;
+
+// Every vertex carries the whole triangle. That is what makes it possible to
+// reproduce the software outline exactly rather than approximately: the offset
+// is per EDGE, and a vertex that can only see itself has no edges.
+in vec3 aPos;
+in vec3 aP1;     // the next corner, in winding order
+in vec3 aP2;     // the one after that
+
+uniform mat4 uMVP;
+uniform vec2 uHalfViewport;   // pixels
+uniform float uPx;            // base ink width in pixels
+
+/** Outward normal of edge p->q, for a triangle wound positive on screen. */
+vec2 edgeNormal(vec2 p, vec2 q) {
+  vec2 d = q - p;
+  float l = length(d);
+  return l > 0.0 ? vec2(d.y, -d.x) / l : vec2(0.0);
+}
+
+void main() {
+  vec4 clip = uMVP * vec4(aPos, 1.0);
+  vec4 c1 = uMVP * vec4(aP1, 1.0);
+  vec4 c2 = uMVP * vec4(aP2, 1.0);
+  // A triangle straddling the near plane cannot be offset meaningfully in
+  // screen space; leave it where it is rather than flinging a corner to
+  // infinity.
+  if (clip.w <= 0.0 || c1.w <= 0.0 || c2.w <= 0.0) { gl_Position = clip; return; }
+
+  // Screen pixels. The hull is pushed out in SCREEN space, not by scaling the
+  // model: a scaled hull draws a line whose width falls off with distance, so
+  // a fighter across the arena loses their ink entirely while one in your face
+  // wears a thick black border. Constant pixel width at every depth is how cel
+  // animation actually looks — the line does not thin out with the drawing.
+  vec2 a = (clip.xy / clip.w) * uHalfViewport;
+  vec2 b = (c1.xy / c1.w) * uHalfViewport;
+  vec2 c = (c2.xy / c2.w) * uHalfViewport;
+
+  // Line weight follows the size of the form. A hand-inked drawing does not
+  // use one pen: big forms carry a heavy contour, small details a fine one,
+  // and projected area is the right proxy because it folds in both how large
+  // the form is and how far away it is. This is the same cross product the
+  // software path measures — twice the area, and the square root of that is
+  // what the constant below was tuned against.
+  float cross2 = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+  float w = uPx * clamp(sqrt(abs(cross2)) * 0.036, 0.5, 1.8);
+
+  // Offset the two edges meeting at this corner and take where they cross.
+  // Pushing the corner radially from the centroid instead would leave the
+  // middle of a long edge barely moved, so the ink would thin out exactly
+  // where a silhouette is longest and most visible.
+  //
+  // edgeNormal points outward for a positively wound triangle. Clip space is
+  // y-up where the software rasteriser's screen space is y-down, so the sign
+  // is taken from the winding rather than assumed — that way this is correct
+  // in either convention and does not silently invert if the projection ever
+  // changes handedness.
+  float s = cross2 < 0.0 ? -1.0 : 1.0;
+  vec2 nPrev = edgeNormal(c, a) * s;     // edge CA, arriving here
+  vec2 nNext = edgeNormal(a, b) * s;     // edge AB, leaving here
+  vec2 bis = nPrev + nNext;
+  float bl = length(bis);
+  vec2 offset;
+  if (bl < 1e-4) {
+    offset = nNext * w;              // edges doubled back: no miter to take
+  } else {
+    bis /= bl;
+    // Moving along the bisector by w / sin(half-angle) lands on the crossing.
+    // Capped so a needle-thin triangle cannot fire a spike across the screen.
+    float cosHalf = max(0.45, dot(bis, nNext));
+    offset = bis * min(w / cosHalf, w * 1.9);
+  }
+
+  clip.xy += (offset / uHalfViewport) * clip.w;
+  gl_Position = clip;
+}
+`;
+
+export const HULL_FS = /* glsl */`#version 300 es
+precision highp float;
+
+uniform vec3 uInk;
+uniform float uAlpha;
+
+out vec4 outColor;
+
+void main() {
+  outColor = vec4(uInk, uAlpha);
+}
+`;
+
+export const LINE_VS = /* glsl */`#version 300 es
+precision highp float;
+
+// Both endpoints on every vertex, plus which end this one is and which side of
+// the line it sits on. That is what lets a line have a width: gl.lineWidth is
+// clamped to 1 everywhere that matters, so an edge is drawn as a quad.
+in vec3 aA;
+in vec3 aB;
+in vec2 aSide;      // x: 0 at A, 1 at B.  y: -1 or +1 across the line
+
+uniform mat4 uMVP;
+uniform vec2 uHalfViewport;
+uniform float uWidth;     // pixels
+uniform float uBias;      // clip-space pull toward the camera
+
+void main() {
+  vec4 ca = uMVP * vec4(aA, 1.0);
+  vec4 cb = uMVP * vec4(aB, 1.0);
+  // An edge crossing the near plane cannot be given a screen direction.
+  // Collapse it rather than letting it swing across the frame.
+  if (ca.w <= 0.0 || cb.w <= 0.0) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+
+  vec2 pa = (ca.xy / ca.w) * uHalfViewport;
+  vec2 pb = (cb.xy / cb.w) * uHalfViewport;
+  vec2 d = pb - pa;
+  float l = length(d);
+  vec2 n = l > 1e-5 ? vec2(-d.y, d.x) / l : vec2(0.0, 1.0);
+
+  vec4 c = mix(ca, cb, aSide.x);
+  vec2 p = mix(pa, pb, aSide.x) + n * aSide.y * uWidth * 0.5;
+
+  // A line lying exactly on the surface it describes z-fights with it, and a
+  // fighting line flickers on and off as the camera moves — which is worse
+  // than no line at all. Pull it a hair toward the eye. Scaling the bias by w
+  // keeps it a constant nudge in depth rather than one that grows with
+  // distance and lifts far lines off their surfaces entirely.
+  gl_Position = vec4((p / uHalfViewport) * c.w, c.z - uBias * c.w, c.w);
+}
+`;
+
+export const LINE_FS = /* glsl */`#version 300 es
+precision highp float;
+uniform vec3 uInk;
+uniform float uAlpha;
+out vec4 outColor;
+void main() { outColor = vec4(uInk, uAlpha); }
+`;

@@ -8,7 +8,11 @@ frame data, guard damage and timing windows. Techniques are tools that open or
 close that range — they are never the whole fight.
 
 It renders in 3D, cel-shaded with ink outlines, on a renderer written from
-scratch for it.
+scratch for it — twice. There is a WebGL2 backend for machines with a graphics
+card and a software rasteriser for machines without, and they draw the same
+picture from the same band table, the same rim test and the same ink geometry.
+`node tools/gltest.mjs` renders a fixed set of shots through both and compares
+the pixels, which is the only way that claim stays true.
 
 No engine, no asset pipeline, no build step, and no third-party runtime code.
 Pure ES modules, a canvas, and procedural WebAudio. Every character, curse,
@@ -25,6 +29,8 @@ node tools/charshots.mjs     # portrait of every sorcerer and curse model
 node tools/castsheet.mjs     # contact sheet: every sorcerer, body and face
 node tools/phonetest.mjs     # asserts the touch controls are usable on a phone
 node tools/valuetest.mjs     # asserts the frame's light-to-dark ordering
+node tools/gltest.mjs        # renders every shot on both backends and diffs them
+node tools/lookshots.mjs     # fixed framings for judging the art direction
 node tools/techshots.mjs shrine   # every ability of a technique, three frames each
 ```
 
@@ -98,6 +104,37 @@ there are only nine slots.
 
 Gamepads are supported (left stick move, right stick aim, face/shoulder buttons
 mapped to the same actions).
+
+---
+
+## Two renderers
+
+The 3D scene is drawn either by a WebGL2 backend or by a software rasteriser,
+and the choice is made once at startup. Settings has a toggle; `?gpu=1` and
+`?gpu=0` force it either way.
+
+They are the same renderer in every respect that shows. The cel band table, the
+uneven band cuts, the hard rim test, the haze that blends toward the horizon
+rather than toward black, the inverted-hull outline with its per-edge miter and
+its weight scaled by projected area, the interior crease and material lines —
+all of it is one set of numbers, transcribed into GLSL rather than reinvented
+there. Models, skeleton, poses, stepped drawings and smears are shared outright:
+the entire GPU port is one branch in `drawMesh()` and one in `drawOutline()`.
+
+What the GPU adds is a real depth buffer, so a blade passing through a body no
+longer sorts by triangle centroid and flickers, and ink that costs nothing —
+the outline hull was the most expensive pass in the software renderer and the
+one the quality tiers kept trying to drop.
+
+The software path is not a legacy branch. It is the fallback where WebGL2 is
+missing, it is **faster** where the GPU is emulated in software (measured at
+39fps against 7 in a container with no graphics card, which is why a browser
+reporting SwiftShader or llvmpipe gets it automatically), and it is the
+reference: where the two disagree, it is right and the shader has a bug.
+
+Known gap: particles, sprites and world-space text still draw through the 2D
+canvas over the blitted GL frame, so they composite without depth against
+geometry. Geometry, outlines and interior lines are all on the GPU.
 
 ---
 

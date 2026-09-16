@@ -1,9 +1,14 @@
 // Software 3D core: vectors, 4x4 matrices, a perspective camera and a
 // depth-sorted polygon rasteriser that draws through canvas 2D.
 //
-// Why not WebGL: the whole game ships as plain modules with no build step and
-// no external dependencies, and a flat-shaded painter's-algorithm renderer is
-// exactly the look this game wants — hard cel shading with ink outlines.
+// This was the only renderer for a long time, on the grounds that the game
+// ships as plain modules with no build step and a flat-shaded
+// painter's-algorithm rasteriser is exactly the look it wants. It is now one
+// of two: gl/backend.js draws the same picture on the GPU where there is one
+// (also hand-written, also no dependencies). This path stays because it is the
+// fallback on a machine without WebGL2, because it is faster than an emulated
+// GPU on a machine without a real one, and because it is the reference — when
+// the two disagree about what a frame should look like, this is right.
 //
 // World axes match the simulation: x/y is the ground plane, +z is up.
 

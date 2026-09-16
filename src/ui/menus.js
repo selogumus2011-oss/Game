@@ -49,7 +49,7 @@ export class UI {
       masterVolume: 0.7, sfxVolume: 0.9, musicVolume: 0.3,
       particles: 1, grain: true, shake: 1, assist: 0, aimAssist: 0.7, showNames: true,
       firstPerson: false, lookSensitivity: 1,
-      render3d: true, cutscenes: true,
+      render3d: true, cutscenes: true, gpu: true,
     };
   }
 
@@ -438,6 +438,7 @@ export class UI {
         ${slider('lookSensitivity', 'Look sensitivity (first person)', 0.3, 2.5, 0.1)}
         ${toggle('firstPerson', 'First person view')}
         ${toggle('render3d', '3D renderer')}
+        ${toggle('gpu', 'Hardware rendering (WebGL)')}
         ${toggle('cutscenes', 'Domain expansion cutscenes')}
         ${toggle('grain', 'Film grain')}
         ${toggle('showNames', 'Enemy name plates')}
@@ -446,6 +447,11 @@ export class UI {
         back. G switches view mid-fight. It needs the 3D renderer.</p>
         <p class="section-note">Turning the 3D renderer off falls back to the classic 2.5D
         presentation. Same simulation, same frame data — only the drawing changes.</p>
+        <p class="section-note" id="gpuNote">Hardware rendering hands the triangles to your
+        graphics card instead of filling them in JavaScript. It draws the same picture — same
+        cel bands, same ink — with a real depth buffer, so a blade passing through a body stops
+        sorting oddly. It is turned off automatically on machines whose browser reports a
+        software renderer, where the hand-written rasteriser is the faster of the two.</p>
         <p class="section-note">Aim assist nudges a swing or a cast the last few degrees
         onto a target you were already pointing at, and widens your reach a little. It will
         never pick a target you were not aiming near.</p>
@@ -470,6 +476,30 @@ export class UI {
         this.hooks.onSettings && this.hooks.onSettings(this.settings);
       };
     });
+    // The GPU toggle is a request, not a command: the renderer declines it on a
+    // machine whose browser reports a software renderer, because there the
+    // hand-written rasteriser is the faster of the two. Show what actually
+    // happened rather than what was asked for.
+    const syncGpu = () => {
+      const el = this.$('[data-toggle="gpu"]');
+      if (!el || !this.hooks.gpuState) return;
+      const st = this.hooks.gpuState();
+      el.classList.toggle('on', st.on);
+      el.textContent = st.on ? 'ON' : 'OFF';
+      el.disabled = !st.available;
+      const note = this.$('#gpuNote');
+      if (note && !st.available && st.why) {
+        note.textContent = `Hardware rendering is unavailable here — ${st.why}. `
+          + 'The hand-written rasteriser is drawing instead, which is what it is for.';
+      }
+    };
+    syncGpu();
+    const gpuBtn = this.$('[data-toggle="gpu"]');
+    if (gpuBtn) {
+      const inner = gpuBtn.onclick;
+      gpuBtn.onclick = () => { inner(); syncGpu(); };
+    }
+
     this.$('[data-act="back"]').onclick = () => back();
   }
 
