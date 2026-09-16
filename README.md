@@ -22,6 +22,9 @@ node tools/browsertest.mjs   # scripted playthrough + screenshots (needs Playwri
 node tools/touchtest.mjs     # drives the game on an iPad viewport by touch alone
 node tools/domainshots.mjs   # opens all 13 domains and screenshots each
 node tools/charshots.mjs     # portrait of every sorcerer and curse model
+node tools/castsheet.mjs     # contact sheet: every sorcerer, body and face
+node tools/phonetest.mjs     # asserts the touch controls are usable on a phone
+node tools/valuetest.mjs     # asserts the frame's light-to-dark ordering
 node tools/techshots.mjs shrine   # every ability of a technique, three frames each
 ```
 
@@ -35,16 +38,33 @@ Keyboard and mouse, a gamepad, and touch all work at once — on an iPad with a
 keyboard attached you can use either, in the same match, without a mode switch.
 
 On a touch device the game draws its own controls: a movement stick that appears
-wherever your left thumb lands, and a right half that aims where you touch and
-attacks while you hold. Everything else is three arcs of buttons sweeping up
-from the bottom-right corner, inside a thumb's reach of where a hand actually
-holds a tablet — the four cursed techniques, then block / dash / jump / grab,
-then Domain Expansion, Simple Domain, Amplification and Reverse Cursed
-Technique. Buttons grey out when the action is not available. The page is pinned
-against rubber-band scrolling and double-tap zoom, lays out inside the safe area,
-and the renderer drops its backing-store resolution on large screens, because
-every polygon here is filled on the CPU and an iPad's 2× store over a full-width
-window is five and a half million pixels a frame.
+wherever your left thumb lands, a right half that aims where you touch and
+attacks while you hold, and a block of buttons wedged into the bottom-right
+corner — rows stacked bottom-up and right-aligned on the thumb, with the four
+cursed techniques on the bottom row where the thumb falls most easily.
+
+A tablet fits all thirteen. A phone fits nine, so the rack is paged: the
+techniques stay put and the row above them swaps between the moves you press
+every few seconds (block, dash, jump, Domain Expansion) and the ones you press
+every few minutes (grab, Simple Domain, Amplification, Reverse Cursed
+Technique). `MORE` flips between them. There is a pause button in the far
+corner, away from the thumbs, because a phone has no `Esc` key. Buttons grey out
+when the action is not available.
+
+Button size is solved rather than chosen — buttons may take the right 55% of the
+width and the bottom 48% of the height, and the largest that fits both wins,
+with 44px across as the floor. `node tools/phonetest.mjs` drives real matches at
+three phone sizes and fails the build if anything overlaps, leaves the screen or
+climbs out of thumb reach; it is there because all three happened at once, and
+the Domain Expansion button spent three viewports off the right edge.
+
+The HUD shrinks and rearranges below 500px rather than overflowing: the vitals
+block scales about its corner, the technique rack becomes a list carrying what
+the buttons cannot fit, and headlines are fitted to the width. The page is
+pinned against rubber-band scrolling and double-tap zoom, lays out inside the
+safe area, and the renderer drops its backing-store resolution on large screens,
+because every polygon here is filled on the CPU and an iPad's 2× store over a
+full-width window is five and a half million pixels a frame.
 
 | Input | Action |
 | --- | --- |
@@ -72,7 +92,9 @@ and whatever you are holding, so the hand sign a technique raises is readable �
 which is the point of it. Sensitivity is in Settings. It needs the 3D renderer.
 
 On a tablet the right half of the screen aims and attacks, or looks around in
-first person; the `VIEW` button switches between them.
+first person; the `VIEW` button switches between them. A phone has no room for
+`VIEW` on the rack — it is a Settings toggle there, and the first thing cut when
+there are only nine slots.
 
 Gamepads are supported (left stick move, right stick aim, face/shoulder buttons
 mapped to the same actions).
