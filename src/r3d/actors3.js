@@ -18,7 +18,7 @@ import {
 import { boneTransform, partTransform } from './models3.js';
 import { handMesh } from './hands3.js';
 import {
-  MeshBuilder, taperedBox,
+  MeshBuilder, taperedBox, taperedPrism,
 } from './geom3.js';
 
 /** How much larger than life the head is drawn. */
@@ -38,10 +38,11 @@ const V = (x, y, z) => ({ x, y, z });
 // the limb it stands for does — hard into the knee, hard into the ankle and
 // the wrist, with the calf and the elbow left a touch proud of the joint above
 // them so the break reads.
-const limbUnit = (c) => cached(`limbU:${c}`, () => taperedBox(1, 0.9, 0.66, 0.6, 1, c));
-const thighUnit = (c) => cached(`thighU:${c}`, () => taperedBox(1, 0.92, 0.74, 0.68, 1, c));
-const shinUnit = (c) => cached(`shinU:${c}`, () => taperedBox(1, 0.95, 0.56, 0.5, 1, c));
-const armUnit = (c) => cached(`armU:${c}`, () => taperedBox(1, 0.9, 0.82, 0.74, 1, c));
+const LIMB_SIDES = 6;
+const limbUnit = (c) => cached(`limbU:${c}`, () => taperedPrism(LIMB_SIDES, 1, 0.9, 0.66, 0.6, 1, c));
+const thighUnit = (c) => cached(`thighU:${c}`, () => taperedPrism(LIMB_SIDES, 1, 0.92, 0.74, 0.68, 1, c));
+const shinUnit = (c) => cached(`shinU:${c}`, () => taperedPrism(LIMB_SIDES, 1, 0.95, 0.56, 0.5, 1, c));
+const armUnit = (c) => cached(`armU:${c}`, () => taperedPrism(LIMB_SIDES, 1, 0.9, 0.82, 0.74, 1, c));
 const handUnit = (c) => cached(`handU:${c}`, () => taperedBox(1, 1.1, 0.8, 0.9, 1, c));
 const footUnit = (c) => cached(`footU:${c}`, () => taperedBox(1, 0.8, 0.9, 0.75, 1, c, {
   topColor: shade(c, 1.15),

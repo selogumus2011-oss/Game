@@ -103,6 +103,57 @@ export function taperedBox(w0, d0, w1, d1, h, color, opts = {}) {
 
 export const box = (w, d, h, color, opts) => taperedBox(w, d, w, d, h, color, opts);
 
+/**
+ * A tapered prism with an elliptical cross-section: taperedBox with more sides.
+ *
+ * Every limb in this game was a four-sided box, which is why they read as
+ * boxes. A four-sided limb shows exactly two faces from any angle with a hard
+ * corner down the middle of it, and no amount of shading hides that — the
+ * silhouette is a rectangle. Six sides shows three, and the corner between
+ * them lands where an arm actually turns.
+ *
+ * Four sides was the right call when every triangle was filled by hand on the
+ * CPU. It costs twelve more triangles a segment, which was real money then and
+ * is not now.
+ *
+ * The cross-section stays elliptical rather than circular because a limb is
+ * wider than it is deep, and that ratio is most of what distinguishes a thigh
+ * from a pipe.
+ */
+export function taperedPrism(seg, w0, d0, w1, d1, h, color, opts = {}) {
+  const b = new MeshBuilder();
+  const top = opts.topColor || color;
+  const side = opts.sideColor || color;
+  const z0 = opts.z0 ?? 0, z1 = z0 + h;
+  const lo = [], hi = [];
+  // Half a step round, so a flat face points along +x rather than a corner:
+  // the models are authored facing that way and a ridge down the front of a
+  // shin is not what anybody wants.
+  //
+  // Which means no vertex sits at zero degrees, so the widest the shape gets
+  // across x is cos(pi/seg) of the semi-axis — a hexagon built naively from
+  // the same numbers as a box comes out thirteen percent narrower than it.
+  // Dividing it back out makes w and d mean exactly what they mean in
+  // taperedBox, so swapping one for the other does not quietly slim every
+  // limb in the game.
+  const kx = 1 / Math.cos(PI / seg);
+  for (let i = 0; i < seg; i++) {
+    const a = ((i + 0.5) / seg) * TAU;
+    const ca = Math.cos(a) * kx, sa = Math.sin(a);
+    lo.push(b.vert(ca * w0 * 0.5, sa * d0 * 0.5, z0));
+    hi.push(b.vert(ca * w1 * 0.5, sa * d1 * 0.5, z1));
+  }
+  for (let i = 0; i < seg; i++) {
+    const j = (i + 1) % seg;
+    b.quad(lo[i], lo[j], hi[j], hi[i], side);
+  }
+  const ct = b.vert(0, 0, z1);
+  for (let i = 0; i < seg; i++) b.tri(hi[i], hi[(i + 1) % seg], ct, top);
+  const cb = b.vert(0, 0, z0);
+  for (let i = 0; i < seg; i++) b.tri(lo[(i + 1) % seg], lo[i], cb, opts.bottomColor || side);
+  return b.build();
+}
+
 export function cylinder(r0, r1, h, seg, color, opts = {}) {
   const b = new MeshBuilder();
   const z0 = opts.z0 ?? 0, z1 = z0 + h;
