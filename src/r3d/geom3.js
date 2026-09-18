@@ -104,6 +104,54 @@ export function taperedBox(w0, d0, w1, d1, h, color, opts = {}) {
 export const box = (w, d, h, color, opts) => taperedBox(w, d, w, d, h, color, opts);
 
 /**
+ * A quad carrying texture coordinates, for the one surface in the game that is
+ * painted rather than built: the face.
+ *
+ * Corners are given explicitly rather than derived from a width and a height,
+ * because the front of a skull is not flat — it slopes back from the brow to
+ * the chin — and a face plate that ignored that would float off the jaw at any
+ * angle but dead ahead.
+ *
+ * The UVs are in texture pixels rather than 0..1, which is what both the
+ * canvas affine mapping and the GL sampler want with the least arithmetic in
+ * between.
+ */
+export function texQuad(corners, texW, texH, color = '#ffffff', cols = 2, rows = 3) {
+  const b = new MeshBuilder();
+  const uv = [];
+  const grid = [];
+  // Subdivided, because the plate is a trapezoid — it follows the jaw in, and
+  // the jaw is narrower than the cheekbones. Canvas maps a triangle affinely,
+  // and two triangles of a trapezoid have genuinely different affine maps, so
+  // an undivided plate kinks visibly down its diagonal. Six cells puts the
+  // error below a pixel at any distance a face is looked at.
+  for (let r = 0; r <= rows; r++) {
+    const tv = r / rows;
+    for (let c = 0; c <= cols; c++) {
+      const tu = c / cols;
+      // Bilinear across the four corners: 0 and 1 are the top edge, 3 and 2
+      // the bottom, in the winding order the caller gave.
+      const top = [0, 1, 2].map((k) => corners[0][k] + (corners[1][k] - corners[0][k]) * tu);
+      const bot = [0, 1, 2].map((k) => corners[3][k] + (corners[2][k] - corners[3][k]) * tu);
+      grid.push(b.vert(
+        top[0] + (bot[0] - top[0]) * tv,
+        top[1] + (bot[1] - top[1]) * tv,
+        top[2] + (bot[2] - top[2]) * tv));
+      uv.push(tu * texW, tv * texH);
+    }
+  }
+  const at = (r, c) => grid[r * (cols + 1) + c];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      b.quad(at(r, c), at(r, c + 1), at(r + 1, c + 1), at(r + 1, c), color, true, 0);
+    }
+  }
+  const m = b.build();
+  m.uv = new Float32Array(uv);
+  return m;
+}
+
+/**
  * A tapered prism with an elliptical cross-section: taperedBox with more sides.
  *
  * Every limb in this game was a four-sided box, which is why they read as
@@ -364,7 +412,12 @@ export function drawMesh(dl, cam, mesh, mat, opts) {
   // what the GPU path had to change. The models, the skeleton, the poses, the
   // lighting levels and every number in the art direction are shared: the
   // backend decides who fills the triangles and nothing else.
-  if (dl.gpu) { dl.gpu.submitMesh(mesh, mat, opts); return; }
+  //
+  // A textured mesh is the exception: it still needs projecting here, because
+  // the paint tone is worked out from the projected normal and handed to the
+  // backend rather than derived twice. Without this it went to the backend as
+  // an ordinary white mesh and drew a blank card over the face.
+  if (dl.gpu && !mesh.tex) { dl.gpu.submitMesh(mesh, mat, opts); return; }
 
   const nv = mesh.nv;
   ensureScratch(nv);
@@ -404,6 +457,11 @@ export function drawMesh(dl, cam, mesh, mat, opts) {
     }
   }
   if (!anyVisible) return;
+
+  // A textured surface takes a different route: its colour comes from an image
+  // rather than from the face table, so it cannot go through the flat-fill
+  // path at all.
+  if (mesh.tex && mesh.uv) { drawTexturedMesh(dl, cam, mesh, mat, sx, sy, sz, opts); return; }
 
   const L = opts.light;
   const ambient = opts.ambient ?? 0.32;
@@ -799,4 +857,87 @@ function corner(vx, vy, nx, ny, e0, e1, px, out, k) {
   const d = Math.min(px / cosHalf, px * 1.9);
   out[k] = vx + bxn * d;
   out[k + 1] = vy + byn * d;
+}
+
+/**
+ * Emit a textured mesh as screen-space triangles with their texture corners.
+ *
+ * The lighting still happens, but it lands on the image rather than on a fill
+ * colour: the band index is worked out here and handed along, and whoever
+ * draws it is responsible for tinting the image to that band. Doing it this
+ * way keeps a painted face sitting in the same paint tone as the skull behind
+ * it, so a character in shadow does not have a brightly lit face floating on
+ * the front of their head.
+ */
+function drawTexturedMesh(dl, cam, mesh, mat, sx, sy, sz, opts) {
+  const faces = mesh.f;
+  const uv = mesh.uv;
+  const L = opts.light;
+  const ambient = opts.ambient ?? 0.32;
+  const keyI = opts.key ?? 0.8;
+  const alpha = opts.alpha ?? 1;
+  const cx = cam.width * 0.5, cy = cam.height * 0.5;
+  const f = cam.f;
+  let band = -1;
+
+  for (let i = 0; i < mesh.nf; i++) {
+    const i0 = faces[i * 3], i1 = faces[i * 3 + 1], i2 = faces[i * 3 + 2];
+    const ax = sx[i0], ay = sy[i0];
+    if (ax !== ax) continue;
+    const bx = sx[i1], by = sy[i1];
+    if (bx !== bx) continue;
+    const ccx = sx[i2], ccy = sy[i2];
+    if (ccx !== ccx) continue;
+
+    const z0 = sz[i0], z1 = sz[i1], z2 = sz[i2];
+    const depth = (z0 + z1 + z2) * 0.333333;
+
+    // The same view-space normal the flat path recovers, for the same reason.
+    const k0 = z0 / f, k1 = z1 / f, k2 = z2 / f;
+    const vax = (ax - cx) * k0, vay = -(ay - cy) * k0;
+    const vbx = (bx - cx) * k1, vby = -(by - cy) * k1;
+    const vcx = (ccx - cx) * k2, vcy = -(ccy - cy) * k2;
+    const e1x = vbx - vax, e1y = vby - vay, e1z = -(z1 - z0);
+    const e2x = vcx - vax, e2y = vcy - vay, e2z = -(z2 - z0);
+    let nx = e1y * e2z - e1z * e2y;
+    let ny = e1z * e2x - e1x * e2z;
+    let nz = e1x * e2y - e1y * e2x;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    nx /= len; ny /= len; nz /= len;
+    if (nz < 0) { nx = -nx; ny = -ny; nz = -nz; }
+    // One tone for the whole surface, taken from the first triangle.
+    //
+    // A textured quad is flat, so both its triangles have the same normal —
+    // but the normal is recovered from the projected corners, and two
+    // recoveries of the same plane differ in the last few bits. That is enough
+    // to drop one triangle a band and leave a hard tonal seam down the diagonal
+    // of a face.
+    if (band < 0) {
+      band = bandOfLight(ambient + keyI * Math.max(0, nx * L.x + ny * L.y + nz * L.z));
+      // The GPU draws the whole surface in one call and only needs the tone.
+      if (dl.gpu) { dl.gpu.submitTextured(mesh, mat, opts, band); return; }
+    }
+
+    dl.texTri(depth - 0.004, mesh.tex,
+      ax, ay, uv[i0 * 2], uv[i0 * 2 + 1],
+      bx, by, uv[i1 * 2], uv[i1 * 2 + 1],
+      ccx, ccy, uv[i2 * 2], uv[i2 * 2 + 1],
+      alpha, band);
+  }
+}
+
+/**
+ * Which paint tone a lighting value falls into.
+ *
+ * Duplicated from core3's private bandOf rather than exported from it: this is
+ * the one caller outside the colour path that needs the index rather than the
+ * finished colour, and the cut points are the art direction, not an
+ * implementation detail to be shared around.
+ */
+function bandOfLight(light) {
+  if (light < 0.56) return 0;
+  if (light < 0.80) return 1;
+  if (light < 1.14) return 2;
+  if (light < 1.36) return 3;
+  return 4;
 }

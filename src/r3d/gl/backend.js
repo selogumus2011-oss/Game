@@ -24,9 +24,12 @@
 
 import {
   MESH_VS, MESH_FS, HULL_VS, HULL_FS, LINE_VS, LINE_FS, OVERLAY_VS, OVERLAY_FS,
-  DEPTH_VS, DEPTH_FS,
+  DEPTH_VS, DEPTH_FS, TEX_VS, TEX_FS,
 } from './shaders.js';
-import { gpuMesh, meshVao, OFFSETS, gpuLines, lineVao, LINE_OFFSETS } from './meshgpu.js';
+import {
+  gpuMesh, meshVao, OFFSETS, gpuLines, lineVao, LINE_OFFSETS,
+  gpuTexMesh, gpuTexture, TEXMESH_STRIDE, TEXMESH_OFFSETS,
+} from './meshgpu.js';
 
 let nextContextId = 1;
 
@@ -167,6 +170,7 @@ export class GLBackend {
     this.line = link(gl, LINE_VS, LINE_FS, 'line');
     this.overlay = link(gl, OVERLAY_VS, OVERLAY_FS, 'overlay');
     this.depth = link(gl, DEPTH_VS, DEPTH_FS, 'depth');
+    this.tex = link(gl, TEX_VS, TEX_FS, 'textured');
 
     this.mLoc = {
       pos: gl.getAttribLocation(this.mesh, 'aPos'),
@@ -220,6 +224,21 @@ export class GLBackend {
       uViewport: gl.getUniformLocation(this.overlay, 'uViewport'),
       uDepthMap: gl.getUniformLocation(this.overlay, 'uDepthMap'),
     };
+    this.tLoc = {
+      pos: gl.getAttribLocation(this.tex, 'aPos'),
+      uv: gl.getAttribLocation(this.tex, 'aUV'),
+      uMVP: gl.getUniformLocation(this.tex, 'uMVP'),
+      uMV: gl.getUniformLocation(this.tex, 'uMV'),
+      uTex: gl.getUniformLocation(this.tex, 'uTex'),
+      uTexSize: gl.getUniformLocation(this.tex, 'uTexSize'),
+      uBias: gl.getUniformLocation(this.tex, 'uBias'),
+      uTint: gl.getUniformLocation(this.tex, 'uTint'),
+      uAlpha: gl.getUniformLocation(this.tex, 'uAlpha'),
+      uBand: gl.getUniformLocation(this.tex, 'uBand'),
+      uFogRange: gl.getUniformLocation(this.tex, 'uFogRange'),
+      uFogColor: gl.getUniformLocation(this.tex, 'uFogColor'),
+    };
+
     this.dLoc = {
       pos: gl.getAttribLocation(this.depth, 'aPos'),
       uLightMVP: gl.getUniformLocation(this.depth, 'uLightMVP'),
@@ -254,10 +273,11 @@ export class GLBackend {
     // front, because a transparent surface has no depth of its own to test
     // against — so it is queued rather than drawn.
     this.blended = [];
+    this.textured = [];
     this.opaque = [];
     this.hulls = [];
     this.lines = [];
-    this.stats = { meshes: 0, hulls: 0, lines: 0, tris: 0, blended: 0, overlay: 0, casters: 0 };
+    this.stats = { meshes: 0, hulls: 0, lines: 0, tris: 0, blended: 0, overlay: 0, casters: 0, textured: 0 };
 
     this.fogColor = [16 / 255, 18 / 255, 26 / 255];
     this.width = 0;
@@ -316,11 +336,12 @@ export class GLBackend {
     this.light = opts.light;
     this.levels = [opts.ambient ?? 0.32, opts.key ?? 0.8, opts.rim ?? 0.35];
     this.blended.length = 0;
+    this.textured.length = 0;
     this.opaque.length = 0;
     this.hulls.length = 0;
     this.lines.length = 0;
     this.stats.meshes = this.stats.hulls = this.stats.lines = 0;
-    this.stats.tris = this.stats.blended = this.stats.overlay = this.stats.casters = 0;
+    this.stats.tris = this.stats.blended = this.stats.overlay = this.stats.casters = this.stats.textured = 0;
     this._oN = 0;
     this._runs.length = 0;
 
@@ -376,6 +397,83 @@ export class GLBackend {
     };
     if (alpha < 0.999 || additive) this.blended.push(item);
     else this.opaque.push(item);
+  }
+
+  /**
+   * A textured surface. One thing in the game is one: the painted face.
+   *
+   * The paint tone arrives as an index rather than being worked out here,
+   * because the software path has already worked it out from the same normal.
+   * A flat plate is one tone, and two derivations of the same plane disagree
+   * in the last bits — which is enough to leave a face a band darker on one
+   * side of its diagonal than the other.
+   */
+  submitTextured(mesh, mat, opts, band) {
+    if (!mesh || !mesh.tex || !mesh.uv) return;
+    const view = this.cam.view;
+    this.textured.push({
+      mesh,
+      // The texture, not the mesh's current pointer to it. One quad is shared
+      // by every character and re-pointed at each face as it is drawn, which
+      // is fine for a renderer that draws as it goes and quietly wrong for one
+      // that queues: by the time the queue is flushed, every entry sees the
+      // last character's face.
+      tex: mesh.tex,
+      mat: copy16(mat),
+      depth: -(view[8] * mat[3] + view[9] * mat[7] + view[10] * mat[11] + view[11]),
+      band,
+      alpha: opts.alpha ?? 1,
+      tint: opts.tint ? [opts.tint[0], opts.tint[1], opts.tint[2]] : null,
+      fogNear: opts.fogNear, fogFar: opts.fogFar,
+    });
+  }
+
+  _drawTextured(it) {
+    const gl = this.gl;
+    const g = gpuTexMesh(gl, it.mesh, this.contextId);
+    let vao = g.vaos.get('tex');
+    if (!vao) {
+      vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.buffer);
+      for (const [loc, size, off] of [[this.tLoc.pos, 3, TEXMESH_OFFSETS.pos],
+                                      [this.tLoc.uv, 2, TEXMESH_OFFSETS.uv]]) {
+        if (loc < 0) continue;
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, size, gl.FLOAT, false, TEXMESH_STRIDE, off);
+      }
+      gl.bindVertexArray(null);
+      g.vaos.set('tex', vao);
+    }
+
+    gl.useProgram(this.tex);
+    matMul4(this.viewProj, it.mat, this.mvp);
+    matMul4(this.cam.view, it.mat, this.mv);
+    gl.uniformMatrix4fv(this.tLoc.uMVP, false, toGL(this.mvp, this._glMat));
+    gl.uniformMatrix4fv(this.tLoc.uMV, false, toGL(this.mv, this._glMat2));
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, gpuTexture(gl, it.tex, this.contextId));
+    gl.uniform1i(this.tLoc.uTex, 1);
+    gl.uniform2f(this.tLoc.uTexSize, it.tex.width, it.tex.height);
+    gl.uniform1f(this.tLoc.uBias, 0.0022);
+    const t = it.tint;
+    gl.uniform3f(this.tLoc.uTint, t ? t[0] : 1, t ? t[1] : 1, t ? t[2] : 1);
+    gl.uniform1f(this.tLoc.uAlpha, it.alpha);
+    gl.uniform1i(this.tLoc.uBand, it.band);
+    if (it.fogNear !== undefined) {
+      gl.uniform2f(this.tLoc.uFogRange, it.fogNear, it.fogFar ?? it.fogNear + 60);
+    } else {
+      gl.uniform2f(this.tLoc.uFogRange, 0, 0);
+    }
+    gl.uniform3fv(this.tLoc.uFogColor, this.fogColor);
+
+    gl.bindVertexArray(vao);
+    gl.disable(gl.CULL_FACE);
+    gl.drawArrays(gl.TRIANGLES, 0, g.verts);
+    gl.enable(gl.CULL_FACE);
+    gl.bindVertexArray(null);
+    gl.activeTexture(gl.TEXTURE0);
+    this.stats.textured++;
   }
 
   /** Submit one outline hull. Mirrors the software `drawOutline`. */
@@ -851,6 +949,13 @@ export class GLBackend {
     }
     for (const h of this.hulls) this._drawHull(h.mesh, h.mat, h.rgb, h.px, h.alpha);
     for (const l of this.lines) this._drawLines(l.mesh, l.mat, l.rgb, l.px, l.edges);
+
+    if (this.textured.length) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      for (const it of this.textured) this._drawTextured(it);
+      gl.disable(gl.BLEND);
+    }
 
     if (this.blended.length) {
       this.blended.sort((a, b) => b.depth - a.depth);

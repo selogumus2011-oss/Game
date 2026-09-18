@@ -504,6 +504,7 @@ const KIND_POLY = 0;
 const KIND_SPRITE = 1;
 const KIND_LINE = 2;
 const KIND_TEXT = 3;
+const KIND_TEXTRI = 4;
 
 export class DrawList {
   constructor() {
@@ -522,7 +523,8 @@ export class DrawList {
     let it = this.items[this.n];
     if (!it) {
       it = { kind: 0, z: 0, pts: new Float32Array(10), count: 0, style: '', alpha: 1, add: false,
-             sprite: null, w: 0, h: 0, rot: 0, text: '', font: '', lw: 1, ink: null };
+             sprite: null, w: 0, h: 0, rot: 0, text: '', font: '', lw: 1, ink: null,
+             uv2: null };
       this.items.push(it);
     }
     this.n++;
@@ -581,6 +583,32 @@ export class DrawList {
     return it;
   }
 
+  /**
+   * A textured triangle: three screen corners with three texture corners.
+   *
+   * The only thing in the game that needs one is a face, which is a painted
+   * cel rather than a fill colour. `band` is the paint tone the surface landed
+   * on, applied to the image when it is drawn so a face in shadow is in the
+   * same tone as the skull it sits on.
+   */
+  texTri(z, tex, x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2, alpha, band) {
+    if (this.gpu) {
+      this.gpu.texTri2d(z, tex, x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2, alpha, band);
+      return null;
+    }
+    const it = this._next();
+    it.kind = KIND_TEXTRI;
+    it.z = z;
+    it.sprite = tex;
+    it.pts[0] = x0; it.pts[1] = y0; it.pts[2] = x1; it.pts[3] = y1;
+    it.pts[4] = x2; it.pts[5] = y2;
+    it.pts[6] = u0; it.pts[7] = v0; it.pts[8] = u1; it.pts[9] = v1;
+    it.uv2 = [u2, v2];
+    it.alpha = alpha;
+    it.lw = band;
+    return it;
+  }
+
   text(z, x, y, str, style, font, alpha = 1, add = false) {
     const it = this._next();
     it.kind = KIND_TEXT;
@@ -619,9 +647,35 @@ export class DrawList {
       switch (it.kind) {
         case KIND_POLY: {
           const p = it.pts;
+          const n = it.count;
           ctx.beginPath();
-          ctx.moveTo(p[0], p[1]);
-          for (let k = 1; k < it.count; k++) ctx.lineTo(p[k * 2], p[k * 2 + 1]);
+          // Close the seam against the neighbouring face.
+          //
+          // Canvas antialiases a polygon edge by coverage, and two faces
+          // sharing an edge each cover their own side of it: the two partial
+          // coverages composite one after the other rather than summing, so a
+          // hairline of whatever was drawn underneath survives down every
+          // shared edge. Measured on a torso it is a 1-2px line reading 26
+          // against neighbours at 76 — a dark scratch across flat surfaces,
+          // and most of why the software path read as noisier than the GPU one
+          // from the same camera.
+          //
+          // Pushing every edge outward overlaps the neighbours and paints the
+          // seam over. Stroking the path in its own colour says the same thing
+          // more tidily, but it is a second canvas operation per face and
+          // measured 74ms a frame against 29 — unaffordable on the path that
+          // phones run. The offset is arithmetic instead, on a path that was
+          // going to be built either way.
+          //
+          // Skipped for anything that composites, where the overlap would show
+          // as an outline rather than disappear, and for faces that carry ink,
+          // whose own stroke already covers the boundary.
+          if (n >= 3 && !it.ink && !it.add && it.alpha >= 1) {
+            growPath(ctx, p, n);
+          } else {
+            ctx.moveTo(p[0], p[1]);
+            for (let k = 1; k < n; k++) ctx.lineTo(p[k * 2], p[k * 2 + 1]);
+          }
           ctx.closePath();
           ctx.fillStyle = it.style;
           ctx.fill();
@@ -651,6 +705,14 @@ export class DrawList {
           }
           break;
         }
+        case KIND_TEXTRI: {
+          const p = it.pts;
+          drawTexTri(ctx, bandedTexture(it.sprite, it.lw),
+            p[0], p[1], p[6], p[7],
+            p[2], p[3], p[8], p[9],
+            p[4], p[5], it.uv2[0], it.uv2[1]);
+          break;
+        }
         case KIND_LINE: {
           const p = it.pts;
           ctx.strokeStyle = it.style;
@@ -675,4 +737,163 @@ export class DrawList {
     ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Seam closing
+// ---------------------------------------------------------------------------
+
+// Five corners is the most a draw item can hold.
+const _nx = new Float32Array(5), _ny = new Float32Array(5);
+
+// How far each edge moves outward, in device pixels. Half of it shows on each
+// side of a shared edge, so neighbours overlap by the whole amount. Measured
+// against the stroke it replaces: 0.6 matches it, more only fattens.
+const GROW = 0.6;
+
+/**
+ * Build the path for a convex screen-space polygon, expanded outward.
+ *
+ * Every edge moves out by GROW and the corners land where the moved edges
+ * cross — the same miter the ink outline uses, and the reason this is not just
+ * "push each corner away from the centroid". On a long thin face the centroid
+ * lies on the sliver's axis, so a radial push slides the corners along the
+ * sliver and moves its long edges almost nowhere: measured, that closed a fat
+ * triangle's seam from 110 to 135 (of 148) and a sliver's from 110 to 110.3,
+ * which is to say not at all. Slivers are exactly what a mesh turns into when
+ * a surface is seen at a glancing angle, so those are the seams worth having.
+ *
+ * Winding is not worked out: each normal is simply turned to face away from
+ * the middle, which is the same thing for a convex face and cannot be got
+ * backwards by a mesh that happens to be mirrored.
+ */
+function growPath(ctx, p, n) {
+  let cx = 0, cy = 0;
+  for (let k = 0; k < n; k++) { cx += p[k * 2]; cy += p[k * 2 + 1]; }
+  cx /= n; cy /= n;
+
+  let longest = 0;
+  for (let k = 0; k < n; k++) {
+    const j = k + 1 === n ? 0 : k + 1;
+    let nx = p[j * 2 + 1] - p[k * 2 + 1];
+    let ny = p[k * 2] - p[j * 2];
+    const l = Math.sqrt(nx * nx + ny * ny);   // also the edge's length
+    if (l > longest) longest = l;
+    if (l < 1e-6) { _nx[k] = 0; _ny[k] = 0; continue; }
+    nx /= l; ny /= l;
+    const mx = (p[k * 2] + p[j * 2]) * 0.5 - cx;
+    const my = (p[k * 2 + 1] + p[j * 2 + 1]) * 0.5 - cy;
+    if (nx * mx + ny * my < 0) { nx = -nx; ny = -ny; }
+    _nx[k] = nx; _ny[k] = ny;
+  }
+
+  // The offset is capped against the face's own size, off the longest edge
+  // rather than a second pass for the radius: a face already smaller than the
+  // offset would otherwise be inflated into a blob, and a distant character is
+  // built entirely out of those.
+  const grow = longest < GROW * 4 ? longest * 0.25 : GROW;
+
+  for (let k = 0; k < n; k++) {
+    const h = k === 0 ? n - 1 : k - 1;      // the edge arriving at this corner
+    let bx = _nx[h] + _nx[k], by = _ny[h] + _ny[k];
+    let ax = p[k * 2], ay = p[k * 2 + 1];
+    const l = Math.sqrt(bx * bx + by * by);
+    if (l > 1e-4) {
+      bx /= l; by /= l;
+      // cos of the half angle between the two edge normals; floored, and the
+      // miter capped, so a needle-sharp corner cannot fire a spike across the
+      // screen.
+      const cosHalf = Math.max(0.45, bx * _nx[k] + by * _ny[k]);
+      const d = Math.min(grow / cosHalf, grow * 1.9);
+      ax += bx * d; ay += by * d;
+    }
+    if (k) ctx.lineTo(ax, ay); else ctx.moveTo(ax, ay);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Textured triangles
+// ---------------------------------------------------------------------------
+
+/**
+ * Draw an image through a triangle, mapping three texture corners onto three
+ * screen corners.
+ *
+ * Canvas has no texture mapping, but a triangle only needs an affine one — the
+ * unique transform taking (u,v) to (x,y) for three points — and canvas does
+ * have `transform`. Clip to the triangle, set that transform, draw the whole
+ * image, and the part inside the clip is the mapped triangle. This is how
+ * software renderers did flat textured surfaces before anyone had a GPU, and
+ * it is exactly enough for the one surface here that needs it.
+ *
+ * Affine rather than perspective-correct, so the mapping drifts under strong
+ * foreshortening. On a face-sized quad at any distance you would look at one
+ * from, the drift is well under a pixel.
+ */
+function drawTexTri(ctx, img, x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2) {
+  const du1 = u1 - u0, dv1 = v1 - v0, du2 = u2 - u0, dv2 = v2 - v0;
+  const det = du1 * dv2 - du2 * dv1;
+  if (!det) return;
+  const dx1 = x1 - x0, dy1 = y1 - y0, dx2 = x2 - x0, dy2 = y2 - y0;
+  const a = (dv2 * dx1 - dv1 * dx2) / det;
+  const b = (dv2 * dy1 - dv1 * dy2) / det;
+  const c = (du1 * dx2 - du2 * dx1) / det;
+  const d = (du1 * dy2 - du2 * dy1) / det;
+
+  ctx.save();
+  ctx.beginPath();
+  // Grown half a pixel from the centroid. Two triangles sharing an edge each
+  // clip to their own side of it and antialiasing leaves a hairline of
+  // background showing down the seam; overlapping them closes it.
+  const gx = (x0 + x1 + x2) / 3, gy = (y0 + y1 + y2) / 3;
+  const grow = (x, y) => {
+    const dx = x - gx, dy = y - gy;
+    const l = Math.hypot(dx, dy) || 1;
+    return [x + dx / l * 0.5, y + dy / l * 0.5];
+  };
+  const g0 = grow(x0, y0), g1 = grow(x1, y1), g2 = grow(x2, y2);
+  ctx.moveTo(g0[0], g0[1]);
+  ctx.lineTo(g1[0], g1[1]);
+  ctx.lineTo(g2[0], g2[1]);
+  ctx.closePath();
+  ctx.clip();
+  ctx.transform(a, b, c, d, x0 - a * u0 - c * v0, y0 - b * u0 - d * v0);
+  ctx.drawImage(img, 0, 0);
+  ctx.restore();
+}
+
+/**
+ * A copy of a texture multiplied into one of the five paint tones.
+ *
+ * A painted face has to sit in the same tone as the skull it is drawn on, or a
+ * character standing in shadow ends up with a brightly lit face floating on
+ * the front of their head. There are five tones and a handful of faces, so
+ * every combination is baked once and kept — tinting per frame would mean two
+ * extra full-canvas composites per triangle.
+ */
+const bandedCache = new Map();
+export function bandedTexture(tex, band) {
+  if (!band && band !== 0) return tex;
+  if (band === 2) return tex;                 // the base tone is the image itself
+  let byBand = bandedCache.get(tex);
+  if (!byBand) { byBand = new Map(); bandedCache.set(tex, byBand); }
+  let out = byBand.get(band);
+  if (out) return out;
+
+  const [l, br, bg, bb] = BANDS[band];
+  out = document.createElement('canvas');
+  out.width = tex.width;
+  out.height = tex.height;
+  const c = out.getContext('2d');
+  c.drawImage(tex, 0, 0);
+  // Multiply the colour through, then put the original alpha back: multiply on
+  // its own would tint the transparent parts into existence.
+  c.globalCompositeOperation = 'multiply';
+  c.fillStyle = `rgb(${Math.round(255 * l * br)},${Math.round(255 * l * bg)},${Math.round(255 * l * bb)})`;
+  c.fillRect(0, 0, out.width, out.height);
+  c.globalCompositeOperation = 'destination-in';
+  c.drawImage(tex, 0, 0);
+  c.globalCompositeOperation = 'source-over';
+  byBand.set(band, out);
+  return out;
 }

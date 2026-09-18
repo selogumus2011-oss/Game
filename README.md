@@ -31,6 +31,7 @@ node tools/phonetest.mjs     # asserts the touch controls are usable on a phone
 node tools/valuetest.mjs     # asserts the frame's light-to-dark ordering
 node tools/gltest.mjs        # renders every shot on both backends and diffs them
 node tools/lookshots.mjs     # fixed framings for judging the art direction
+node tools/faceshots.mjs     # contact sheet of every painted face, at texture size
 node tools/techshots.mjs shrine   # every ability of a technique, three frames each
 ```
 
@@ -120,6 +121,14 @@ its weight scaled by projected area, the interior crease and material lines —
 all of it is one set of numbers, transcribed into GLSL rather than reinvented
 there. Models, skeleton, poses, stepped drawings and smears are shared outright:
 the entire GPU port is one branch in `drawMesh()` and one in `drawOutline()`.
+
+The painted face is shared the same way. Both paths build the same texture and
+the same quad, and both work out the paint tone from the mesh rather than per
+triangle — a lesson from a seam that ran down the middle of every face until it
+turned out two recoveries of one plane's normal disagreed in the last bits and
+dropped one triangle a band. The GPU needs a depth bias the software path does
+not, because the flat plate sinks into the bulging skull around the eyes and a
+real depth buffer is right to hide it where a centroid sort is not.
 
 What the GPU adds is a real depth buffer, so a blade passing through a body no
 longer sorts by triangle centroid and flickers, and ink that costs nothing —
@@ -466,7 +475,11 @@ It is all hand-written, in `src/r3d/`:
 - **`core3.js`** — vectors, 4×4 matrices, the orbit-follow camera, quantised
   three-band cel shading with a colour cache, and a draw list that collects
   every polygon, sprite, line and label in the frame and sorts it once by view
-  depth.
+  depth. Solid faces are grown half a pixel along their edge normals before
+  filling: canvas antialiases each side of a shared edge separately, so without
+  it a hairline of whatever lies underneath survives down every seam — measured
+  on a torso, a 1-2px scratch reading 26 against a 76 surface. Also affine
+  texture mapping, for the one surface that is painted rather than shaded.
 - **`geom3.js`** — the primitive builders (tapered boxes, cylinders, cones,
   spheres, prisms, rings, domes) and the rasteriser. Faces are culled by screen
   winding, then the view-space normal is recovered from the projected triangle
@@ -476,9 +489,16 @@ It is all hand-written, in `src/r3d/`:
 - **`pose3.js`** — the 3D skeleton: hips, chest, neck, head, shoulders, elbows,
   hands, knees and feet, driven by the same frame data the simulation uses, with
   spring chains for hair and coat tails.
+- **`face3.js`** — the face, drawn rather than built. Eyes, brows, lashes, nose,
+  mouth, markings and stitches are line art on one transparent 256×256 canvas
+  per character, which a single quad carries over the shaded skull. This is how
+  a cel is actually made, and it does what geometry could not: an eye a few
+  pixels across needs a drawn lid and a drawn iris, not a polygon small enough
+  to alias away. The paint tone is worked out per mesh and the art multiplied
+  into it, so a character standing in shadow does not wear a lit face.
 - **`models3.js` / `actors3.js`** — procedural bodies. Heads are built per
-  palette (skull, jaw, ears, eye plates, brows, nine hair styles, blindfold,
-  markings, stitches); limbs are unit bones stretched onto the skeleton; every
+  palette (skull, jaw, ears, nine hair styles, blindfold as real geometry);
+  limbs are six-sided tapered prisms stretched onto the skeleton; every
   cursed tool has its own mesh. The curse roster has a builder per silhouette —
   blob, mouth, mantis, wraith, hulk, serpent, finger bearer, hanged, special
   grade, dog, toad, nue, Mahoraga, Rika, isomer, fish, puppet.

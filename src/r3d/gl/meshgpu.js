@@ -203,3 +203,55 @@ export function lineVao(gl, lines, key, attribs) {
   lines.vaos.set(key, vao);
   return vao;
 }
+
+
+/**
+ * Position and texture coordinates for a textured mesh.
+ *
+ * Kept in its own buffer rather than widened into the main vertex format: one
+ * surface in the game is textured, and two more floats on every vertex of
+ * every character to serve it would be a poor trade.
+ */
+export function gpuTexMesh(gl, mesh, contextId) {
+  const cached = mesh._gpuTex;
+  if (cached && cached.contextId === contextId) return cached;
+
+  const nf = mesh.nf;
+  const data = new Float32Array(nf * 3 * 5);
+  let o = 0;
+  for (let i = 0; i < nf * 3; i++) {
+    const v = mesh.f[i] * 3, u = mesh.f[i] * 2;
+    data[o] = mesh.v[v]; data[o + 1] = mesh.v[v + 1]; data[o + 2] = mesh.v[v + 2];
+    data[o + 3] = mesh.uv[u]; data[o + 4] = mesh.uv[u + 1];
+    o += 5;
+  }
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  const out = { contextId, buffer, verts: nf * 3, vaos: new Map() };
+  mesh._gpuTex = out;
+  return out;
+}
+
+export const TEXMESH_STRIDE = 5 * 4;
+export const TEXMESH_OFFSETS = { pos: 0, uv: 12 };
+
+/** A GL texture for a canvas, uploaded once and kept on the canvas itself. */
+export function gpuTexture(gl, canvas, contextId) {
+  const cached = canvas._glTex;
+  if (cached && cached.contextId === contextId) return cached.tex;
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  // Trilinear, because a face is read at every distance from arm's length to
+  // across the arena and an unmipmapped one crawls badly as it recedes.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  canvas._glTex = { contextId, tex };
+  return tex;
+}

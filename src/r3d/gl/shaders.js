@@ -402,3 +402,59 @@ export const DEPTH_FS = /* glsl */`#version 300 es
 precision highp float;
 void main() {}
 `;
+
+export const TEX_VS = /* glsl */`#version 300 es
+precision highp float;
+in vec3 aPos;
+in vec2 aUV;
+uniform mat4 uMVP;
+uniform mat4 uMV;
+uniform vec2 uTexSize;
+uniform float uBias;
+out vec2 vUV;
+out float vDepth;
+void main() {
+  vUV = aUV / uTexSize;
+  vDepth = -(uMV * vec4(aPos, 1.0)).z;
+  vec4 clip = uMVP * vec4(aPos, 1.0);
+  // A decal, not a surface. The plate is a flat quad across a skull that
+  // bulges at the cheekbones, so around the eyes it sits a few millimetres
+  // INSIDE the head and a depth buffer is quite right to hide it. The software
+  // path never noticed because it has no depth buffer and sorts the plate in
+  // front by a fixed offset; this is the same offset, in the same spirit.
+  clip.z -= uBias * clip.w;
+  gl_Position = clip;
+}
+`;
+
+export const TEX_FS = /* glsl */`#version 300 es
+precision highp float;
+
+${CEL}
+
+in vec2 vUV;
+in float vDepth;
+
+uniform sampler2D uTex;
+uniform vec3 uTint;
+uniform float uAlpha;
+uniform int uBand;
+uniform vec2 uFogRange;
+uniform vec3 uFogColor;
+
+out vec4 outColor;
+
+void main() {
+  vec4 t = texture(uTex, vUV);
+  if (t.a <= 0.004) discard;
+  // The paint tone comes in as an index rather than being worked out here: the
+  // surface is flat, so it is one tone for the whole plate, and the software
+  // path picks it the same way from the same normal. Deriving it twice from
+  // two different recoveries of the same plane is how a face ends up a band
+  // darker on one side of its diagonal than the other.
+  vec4 band = BANDS[uBand];
+  vec3 c = clamp(t.rgb * band.x * band.yzw * uTint, 0.0, 1.0);
+  c = hazed(c, vDepth, uFogRange, uFogColor);
+  outColor = vec4(c, t.a * uAlpha);
+}
+`;

@@ -13,9 +13,10 @@
 // (cos rz · sin ry, sin rz · sin ry, cos ry).
 
 import { clamp, clamp01, lerp, TAU, PI } from '../core/math.js';
+import { faceTexture } from './face3.js';
 import { matCompose, matMul, matIdentity, hexToRgb, shadeColor } from './core3.js';
 import {
-  MeshBuilder, taperedBox, box, cylinder, cone, sphere, prism, disc, ringMesh, bake,
+  MeshBuilder, taperedBox, box, cylinder, cone, sphere, prism, disc, ringMesh, bake, texQuad,
 } from './geom3.js';
 import { pose3, rig3 } from './pose3.js';
 
@@ -225,122 +226,21 @@ function headMesh(a, opts = {}) {
       b.merge(box(0.017, 0.042, 0.062, dark), matCompose(-0.012, s * 0.083, 0.095, 0, 0, 0));
     }
 
-    // The shadow the fringe casts across the brow.
+    // The face itself is not built here any more — see face3.js. It is painted
+    // into a texture and drawn as one quad in front of the skull, because a box
+    // cannot be almond-shaped and a lash cannot taper, and a dozen little
+    // plates resolve at three metres into a pale plate with marks on it.
     //
-    // This is the most recognisable thing about an animated face and the
-    // cheapest to get: a flat shape of shadow-tone skin sitting across the
-    // forehead, with a stepped lower edge rather than a straight one so it
-    // reads as painted rather than as a band. Without it a face is a blank
-    // light shape and no amount of correct shading elsewhere fixes it.
-    if (!opts.curse) {
-      // One step down from skin, not three. At 0.68 it came out as a pale
-      // headband with a hard edge across the brow; a cast shadow is a change
-      // of tone, not a different material.
-      const brow = shadeCool(skin, 0.80);
-      // Two overlapping plates: the upper one full width, the lower one
-      // narrower and offset, which gives the edge a break in it.
-      b.merge(box(0.01, 0.16, 0.048, brow, { z0: -0.006 }),
-        matCompose(0.0855, 0, 0.172, 0, 0, 0));
-      b.merge(box(0.01, 0.095, 0.028, brow, { z0: -0.006 }),
-        matCompose(0.0855, -0.024, 0.15, 0, 0, 0));
-      // The plane under the cheekbone, which is what gives a jaw its shape.
-      for (const s of [1, -1]) {
-        b.merge(box(0.009, 0.026, 0.034, brow, { z0: -0.017 }),
-          matCompose(0.0735, s * 0.064, 0.086, 0, 0, 0));
-      }
-    }
-
-    // Eyes.
-    //
-    // A drawn face lives or dies on these, and they were two small pale
-    // rectangles with a dot in them. An animated eye is built in layers, and
-    // every layer is doing a job:
-    //
-    //   * The **lash line** along the top is the heaviest mark on the whole
-    //     face — thicker than the outline of the head — and it is what makes
-    //     an eye read as an eye rather than as a window.
-    //   * The **iris** is tall, filling most of the opening rather than
-    //     floating in the middle of it.
-    //   * The **pupil** sits inside that.
-    //   * The **highlight** is a single small bright square, off-centre. It is
-    //     the cheapest mark in animation and the one that makes a face look
-    //     alive instead of dead.
-    //
-    // Layered outward along +x in small steps so nothing z-fights.
-    if (!a.blindfold && !opts.curse) {
-      const lash = shade(hair, 0.55);
-      for (const s of [1, -1]) {
-        const ey = s * 0.045;
-        // Sclera, as three stacked bands rather than one rectangle. A drawn
-        // eye is a lens; a rectangular one reads as a visor, which is exactly
-        // what these looked like — two red windows behind a dark bar. The
-        // bands narrow above and below and shift outboard as they rise, so the
-        // outer corner sits higher than the inner one the way a drawn eye's
-        // does.
-        //
-        // And they are big: an eye a fifth of the face across is a human
-        // proportion, and at that size every small mark nearby — a lash, a
-        // brow, a clan marking — competes with it on equal terms and the whole
-        // face reads as a panel of bars. Drawn eyes take a third of the width
-        // and settle the argument.
-        b.merge(box(0.012, 0.042, 0.015, '#f7f6f8', { z0: 0.013 }),
-          matCompose(0.0815, ey + s * 0.008, 0.112, 0, 0, 0));
-        b.merge(box(0.012, 0.066, 0.026, '#f7f6f8', { z0: -0.013 }),
-          matCompose(0.0815, ey, 0.112, 0, 0, 0));
-        b.merge(box(0.012, 0.048, 0.013, '#f7f6f8', { z0: -0.026 }),
-          matCompose(0.0815, ey - s * 0.005, 0.112, 0, 0, 0));
-        // Iris. Narrow enough that white shows at both corners — filling the
-        // opening with colour is what made these read as two lit panels rather
-        // than as eyes.
-        b.merge(box(0.013, 0.030, 0.040, eyes, { z0: -0.021 }),
-          matCompose(0.0845, ey, 0.110, 0, 0, 0));
-        // Pupil.
-        b.merge(box(0.014, 0.013, 0.020, shade(eyes, 0.34), { z0: -0.010 }),
-          matCompose(0.0862, ey, 0.110, 0, 0, 0));
-        // Highlight, up and inboard — the same corner on both eyes, because a
-        // highlight comes from a light and lights do not mirror.
-        b.merge(box(0.015, 0.012, 0.013, '#ffffff', { z0: -0.0065 }),
-          matCompose(0.0872, ey - 0.010, 0.123, 0, 0, 0));
-        // Lash line across the top: the heaviest mark on the face, but a line
-        // and not a bar. At 0.012 deep it sat over the eye like a shutter.
-        b.merge(box(0.016, 0.062, 0.009, lash, { z0: -0.0045 }),
-          matCompose(0.0855, ey + s * 0.003, 0.1395, 0, 0, 0));
-        // Brow above it, thin and clear of the lid.
-        b.merge(box(0.012, 0.05, 0.009, hairDark, { z0: -0.0045 }),
-          matCompose(0.0835, ey, 0.158, 0, -0.22 * s, 0));
-      }
-    } else if (a.blindfold) {
-      // The blindfold wraps the whole upper face and knots at the back.
+    // The blindfold is the exception that stays geometry: it wraps the head
+    // and knots at the back, so it is a shape rather than a drawing on the
+    // front plane.
+    if (a.blindfold) {
       b.merge(box(0.028, 0.2, 0.062, '#101319', { z0: -0.031 }),
         matCompose(0.076, 0, 0.115, 0, 0, 0));
       b.merge(box(0.16, 0.185, 0.05, '#171b23', { z0: -0.025 }),
         matCompose(0.0, 0, 0.115, 0, 0, 0));
       b.merge(box(0.05, 0.03, 0.03, '#171b23', { z0: -0.015 }),
         matCompose(-0.105, 0.02, 0.1, 0, 0, 0.5));
-    }
-
-    // Mouth. A line, not a slab: at 0.042 across in mid-grey it read as a
-    // letterbox slot halfway down the chin. Short, dark, and up under the nose
-    // where a mouth goes.
-    b.merge(box(0.009, 0.026, 0.006, shade(skin, 0.44), { z0: -0.003 }),
-      matCompose(0.0765, 0, 0.048, 0, 0, 0));
-
-    // Clan markings. Pushed out to the temple and down onto the cheekbone: at
-    // the old spacing they landed on the outer corner of each eye and read as
-    // part of it, which turned a pair of eyes into a pair of bolted panels.
-    if (a.markings) {
-      for (const s of [1, -1]) {
-        b.merge(box(0.008, 0.011, 0.026, '#2a1414', { z0: -0.013 }),
-          matCompose(0.0855, s * 0.021, 0.172, 0, 0, 0));
-        b.merge(box(0.008, 0.010, 0.022, '#2a1414', { z0: -0.011 }),
-          matCompose(0.077, s * 0.079, 0.072, 0, 0, 0));
-      }
-    }
-    if (a.stitches) {
-      for (let i = 0; i < 4; i++) {
-        b.merge(box(0.008, 0.05, 0.008, '#3a2a2a', { z0: -0.004 }),
-          matCompose(0.084, -0.02 + i * 0.018, 0.07 + i * 0.03, 0, 0, 0));
-      }
     }
 
     // --- hair ---------------------------------------------------------------
@@ -485,6 +385,40 @@ function headMesh(a, opts = {}) {
  * Roughly a tenth of the triangles of the real one, and at twenty metres they
  * are indistinguishable.
  */
+/**
+ * Where the painted face sits on the skull.
+ *
+ * The corners slope with the front of the head — the brow stands forward of
+ * the chin by more than a centimetre at this scale — so the plate follows the
+ * face instead of hovering off the jaw at every angle but dead ahead. It is
+ * pushed a hair proud of the skull so it never fights it for depth.
+ *
+ * The vertical span is set by the layout in face3.js: the eye line lives at
+ * 0.44 of the texture's height and the eyes belong at z = 0.112, which fixes
+ * the top edge at the hairline and the bottom just under the chin.
+ */
+const FACE_TOP = 0.215, FACE_BOT = -0.012;
+// Wider at the cheekbones than at the jaw, because the skull is: a rectangular
+// plate overhangs the chin by half its width and reads as a card held in front
+// of the face.
+const FACE_HW_TOP = 0.082, FACE_HW_BOT = 0.056;
+const faceQuadMesh = () => cached('faceQuad', () => texQuad([
+  [0.0858, FACE_HW_TOP, FACE_TOP],
+  [0.0858, -FACE_HW_TOP, FACE_TOP],
+  [0.0752, -FACE_HW_BOT, FACE_BOT],
+  [0.0752, FACE_HW_BOT, FACE_BOT],
+], 256, 256));
+
+/** The face plate for one appearance, texture and all. */
+export function faceMesh(a) {
+  if (a.blindfold) return null;
+  const m = faceQuadMesh();
+  // One shared quad, re-pointed at whichever face is being drawn. The geometry
+  // is identical for everybody; only the painting differs.
+  m.tex = faceTexture(a);
+  return m;
+}
+
 function headMeshLow(a) {
   const skin = a.skin || '#e9c8ac';
   const hair = a.hair || '#1b1b22';

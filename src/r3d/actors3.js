@@ -13,7 +13,7 @@ import { pose3, rig3, updateRig3 } from './pose3.js';
 import { hasStatus } from '../sim/status.js';
 import {
   headMesh, headMeshLow, torsoMesh, coatMesh, pelvisMesh, maneMesh, toolMesh,
-  buildCurse, shade, eyeMesh, LIMB_W, cached, paintTone, UNIFORM_TONE,
+  buildCurse, shade, eyeMesh, LIMB_W, cached, paintTone, UNIFORM_TONE, faceMesh,
 } from './models3.js';
 import { boneTransform, partTransform } from './models3.js';
 import { handMesh } from './hands3.js';
@@ -339,6 +339,17 @@ function drawHumanoid(dl, cam, f, sk, S, q, time, a) {
   const headMat = partTransform(rootMat, headAnchor,
     hr.y * 0.8, sk.headPitch - hr.x * 0.8, tw * 1.1 + sk.headYaw, hs, tmpMat);
   if (!vm) emit(q.lod === 0 ? headMesh(a) : headMeshLow(a), headMat, outline, 2.6);
+  // The face, painted rather than built: one textured quad in front of the
+  // skull. Near tier only — at the distance the low head takes over, a face is
+  // a dozen pixels and the texture is doing nothing the skull's own tone does
+  // not already do.
+  if (!vm && q.lod === 0) {
+    const fm = faceMesh(a);
+    // No ink: the outline pass offsets back faces by a fixed number of screen
+    // pixels, and on a single flat quad that draws a black border round the
+    // whole face.
+    if (fm) emit(fm, headMat, false);
+  }
   const mane = maneMesh(a);
   if (mane && q.detail > 0 && !vm) {
     matCompose(head.x - 0.01 * hs + hr.x * 0.4, head.y + hr.y * 0.4,
