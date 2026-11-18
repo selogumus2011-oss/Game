@@ -1,0 +1,23 @@
+{
+  "name": "news-trading-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Intraday trading bot: reads market news from trusted sources, scores it with Claude, confirms against price action, and trades through Alpaca. Paper trading by default.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/index.js run",
+    "dry-run": "node --env-file-if-exists=.env src/index.js run --dry-run",
+    "once": "node --env-file-if-exists=.env src/index.js once",
+    "signals": "node --env-file-if-exists=.env src/index.js signals",
+    "status": "node --env-file-if-exists=.env src/index.js status",
+    "sources": "node --env-file-if-exists=.env src/index.js check-sources",
+    "flatten": "node --env-file-if-exists=.env src/index.js flatten",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.10.0"
+  }
+}

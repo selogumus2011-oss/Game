@@ -1,0 +1,20 @@
+{
+  "watchlist": [
+    { "symbol": "AAPL", "names": ["Apple"] },
+    { "symbol": "MSFT", "names": ["Microsoft"] },
+    { "symbol": "NVDA", "names": ["Nvidia", "NVIDIA"] },
+    { "symbol": "COST", "names": ["Costco"] }
+  ],
+  "analysis": {
+    "effort": "medium",
+    "maxCallsPerHour": 40
+  },
+  "signal": {
+    "entryThreshold": 0.7
+  },
+  "risk": {
+    "riskPerTradePct": 0.25,
+    "maxOpenPositions": 3,
+    "maxDailyLossPct": 1.5
+  }
+}
