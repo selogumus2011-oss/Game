@@ -83,10 +83,20 @@ test('keyword fallback reads obvious phrases with capped confidence', () => {
 test('position size is set by the stop distance, capped by position size and buying power', () => {
   const risk = { ...cfg.risk, riskPerTradePct: 0.5, stopLossPct: 1.5, maxPositionPct: 10 };
   // $500 risk / ($100 * 1.5%) = 333 shares, but 10% of equity caps it at 100.
-  assert.equal(sizePosition({ equity: 100_000, buyingPower: 100_000, price: 100, risk }), 100);
-  assert.equal(sizePosition({ equity: 100_000, buyingPower: 100_000, price: 100, risk: { ...risk, maxPositionPct: 100 } }), 333);
-  assert.equal(sizePosition({ equity: 100_000, buyingPower: 2_000, price: 100, risk }), 19);
-  assert.equal(sizePosition({ equity: 1_000, buyingPower: 1_000, price: 900, risk }), 0);
+  const qty = (o) => sizePosition(o).qty;
+  assert.equal(qty({ equity: 100_000, buyingPower: 100_000, price: 100, risk }), 100);
+  assert.equal(qty({ equity: 100_000, buyingPower: 100_000, price: 100, risk: { ...risk, maxPositionPct: 100 } }), 333);
+  assert.equal(qty({ equity: 100_000, buyingPower: 2_000, price: 100, risk }), 19);
+  assert.deepEqual(sizePosition({ equity: 1_000, buyingPower: 1_000, price: 900, risk }), { qty: 0, fractional: false });
+});
+
+test('a small budget buys a fractional share, but never under the $1 minimum', () => {
+  const risk = { ...cfg.risk, riskPerTradePct: 0.5, stopLossPct: 1.5, maxPositionPct: 10 };
+  // A $127 budget allows $12.70 per position: 0.0508 of a $250 share.
+  assert.deepEqual(sizePosition({ equity: 127, buyingPower: 50_000, price: 250, risk, allowFractional: true }), { qty: 0.0508, fractional: true });
+  assert.equal(sizePosition({ equity: 127, buyingPower: 50_000, price: 250, risk }).qty, 0, 'fractions off');
+  assert.equal(sizePosition({ equity: 5, buyingPower: 5, price: 250, risk, allowFractional: true }).qty, 0, '$0.50 is under the minimum');
+  assert.deepEqual(sizePosition({ equity: 127, buyingPower: 50_000, price: 10, risk, allowFractional: true }), { qty: 1, fractional: false }, 'whole shares when one fits');
 });
 
 test('bracket prices sit on the right side and on a valid tick', () => {

@@ -76,9 +76,74 @@ export class TradingBot {
       if (d.day) this.log.info(`new trading day ${today}; daily counters reset`);
       d.day = today;
       d.tradesToday = 0;
+      d.realizedToday = 0;
       d.halted = null;
       this.assetCache.clear();
     }
+  }
+
+  /**
+   * The bot's trading budget in dollars when risk.capital is set, converted
+   * at the broker's rate once a day. null means "use the whole account".
+   */
+  async resolveBudget(nowMs) {
+    const cap = this.config.risk.capital;
+    if (!cap) return null;
+    const d = this.state.data;
+    const today = nyDateKey(nowMs);
+    const prev = d.budget;
+    if (prev?.day === today && prev.amount === cap.amount && prev.currency === cap.currency && (cap.fxRate == null || prev.rate === cap.fxRate)) return prev;
+    let rate = 1;
+    if (cap.currency !== 'USD') {
+      rate = cap.fxRate ?? null;
+      if (rate == null) {
+        try {
+          rate = await this.broker.getFxRate(`${cap.currency}USD`);
+          if (!(rate > 0.01 && rate < 1000)) throw new Error(`implausible rate ${rate}`);
+        } catch (err) {
+          if (prev?.currency === cap.currency && prev.rate > 0) {
+            rate = prev.rate;
+            this.log.warn(`could not fetch the ${cap.currency}USD rate (${err.message}); keeping ${rate}`);
+          } else {
+            throw new Error(`could not fetch the ${cap.currency}USD exchange rate (${err.message}). Set risk.capital.fxRate to give it yourself.`);
+          }
+        }
+      }
+    }
+    d.budget = { day: today, amount: cap.amount, currency: cap.currency, rate, usd: Math.round(cap.amount * rate * 100) / 100 };
+    this.log.event('budget', cap.currency === 'USD'
+      ? `trading budget $${d.budget.usd}`
+      : `trading budget ${cap.amount} ${cap.currency} = $${d.budget.usd} at ${cap.currency}USD ${rate}`, d.budget);
+    return d.budget;
+  }
+
+  /** Realised P&L of a position the broker closed, from its fills. */
+  async realizedFromFills(sym, entry) {
+    const fallback = entry.lastUnrealizedPl ?? 0;
+    if (!this.broker.getClosedOrders) return fallback;
+    try {
+      const orders = (await this.broker.getClosedOrders({ symbol: sym, after: entry.at - MINUTE }))
+        .filter((o) => o.filledQty > 0 && o.filledAvgPrice > 0);
+      const entryFill = orders.find((o) => o.clientOrderId === entry.clientOrderId);
+      if (!entryFill && entry.avgEntryPrice == null) return 0; // never filled
+      const entryPx = entryFill?.filledAvgPrice ?? entry.avgEntryPrice;
+      const exitSide = entry.side === 'buy' ? 'sell' : 'buy';
+      const exits = orders.filter((o) => o.side === exitSide && o.clientOrderId !== entry.clientOrderId);
+      if (exits.length === 0) return fallback;
+      const dir = entry.side === 'buy' ? 1 : -1;
+      return exits.reduce((sum, o) => sum + dir * (o.filledAvgPrice - entryPx) * o.filledQty, 0);
+    } catch (err) {
+      this.log.warn(`could not read ${sym} fills (${err.message}); using the last known P&L`);
+      return fallback;
+    }
+  }
+
+  /** The bot's own P&L today: closed trades plus what its open positions show. */
+  botPnl(posBySym) {
+    const d = this.state.data;
+    let open = 0;
+    for (const sym of Object.keys(d.entries)) open += posBySym.get(sym)?.unrealizedPl ?? 0;
+    return d.realizedToday + open;
   }
 
   async tick() {
@@ -111,7 +176,9 @@ export class TradingBot {
     const [account, positions, openOrders] = await Promise.all([
       this.broker.getAccount(), this.broker.getPositions(), this.broker.getOpenOrders(),
     ]);
+    const budget = await this.resolveBudget(nowMs);
     report.account = { equity: account.equity, buyingPower: account.buyingPower };
+    report.budget = budget;
     const posBySym = new Map(positions.map((p) => [p.symbol, p]));
     const ordersBySym = new Map();
     for (const o of openOrders) (ordersBySym.get(o.symbol) || ordersBySym.set(o.symbol, []).get(o.symbol)).push(o);
@@ -120,20 +187,32 @@ export class TradingBot {
     // entry never filled. Either way the bot is no longer managing them.
     for (const [sym, entry] of Object.entries(d.entries)) {
       if (!posBySym.has(sym) && !ordersBySym.get(sym)?.length) {
+        const pnl = this.config.dryRun ? 0 : await this.realizedFromFills(sym, entry);
+        d.realizedToday += pnl;
         delete d.entries[sym];
         d.lastExitAt[sym] = nowMs;
         this.log.event('closed', this.config.dryRun
           ? `[dry run] clearing the simulated ${sym} entry`
-          : `${sym} is no longer open: its stop or target filled, or the entry did not fill`, { symbol: sym, entry });
-        report.actions.push({ type: 'closed-by-broker', symbol: sym });
+          : `${sym} is no longer open: its stop or target filled, or the entry did not fill (P&L $${pnl.toFixed(2)})`, { symbol: sym, entry, pnl });
+        report.actions.push({ type: 'closed-by-broker', symbol: sym, pnl });
+      }
+    }
+    // Remember what each open position shows, for P&L if it closes.
+    for (const [sym, entry] of Object.entries(d.entries)) {
+      const pos = posBySym.get(sym);
+      if (pos) {
+        entry.lastUnrealizedPl = pos.unrealizedPl;
+        entry.avgEntryPrice = pos.avgEntryPrice;
       }
     }
 
-    // Daily loss limit, measured on the whole account.
-    const pnl = dailyPnlPct(account);
-    report.dailyPnlPct = pnl;
-    if (!d.halted && pnl <= -cfg.risk.maxDailyLossPct) {
-      d.halted = { reason: `account down ${pnl.toFixed(2)}% today, limit is ${cfg.risk.maxDailyLossPct}%`, at: nowMs };
+    // Daily loss limit: on the bot's own P&L against its budget when it has
+    // one, otherwise on the whole account.
+    const pnlPct = budget ? (this.botPnl(posBySym) / budget.usd) * 100 : dailyPnlPct(account);
+    report.dailyPnlPct = pnlPct;
+    if (!d.halted && pnlPct <= -cfg.risk.maxDailyLossPct) {
+      const what = budget ? 'the bot is down' : 'the account is down';
+      d.halted = { reason: `${what} ${Math.abs(pnlPct).toFixed(2)}% today, the limit is ${cfg.risk.maxDailyLossPct}%`, at: nowMs };
       this.log.event('halt', `trading halted for the day: ${d.halted.reason}`, d.halted);
       if (cfg.risk.flattenOnDailyLoss) await this.closeManaged('daily loss limit', report);
     }
@@ -149,12 +228,16 @@ export class TradingBot {
 
     // Exits.
     for (const [sym, entry] of Object.entries(d.entries)) {
-      if (!posBySym.has(sym)) continue;
+      const pos = posBySym.get(sym);
+      if (!pos) continue;
       const dir = entry.side === 'buy' ? 1 : -1;
       const score = signals.get(sym)?.score ?? 0;
       const held = minutesBetween(entry.at, nowMs);
+      const px = pos.currentPrice;
       let reason = null;
-      if (score * dir <= -cfg.signal.exitThreshold) reason = `news turned against the position (score ${score.toFixed(2)})`;
+      if (entry.exits === 'bot' && px > 0 && (px - entry.stopLoss) * dir <= 0) reason = `price ${px} reached the stop at ${entry.stopLoss}`;
+      else if (entry.exits === 'bot' && px > 0 && (px - entry.takeProfit) * dir >= 0) reason = `price ${px} reached the target at ${entry.takeProfit}`;
+      else if (score * dir <= -cfg.signal.exitThreshold) reason = `news turned against the position (score ${score.toFixed(2)})`;
       else if (held >= cfg.risk.maxHoldMinutes) reason = `held ${Math.round(held)} min, the limit is ${cfg.risk.maxHoldMinutes}`;
       if (reason) await this.exit(sym, reason, report);
     }
@@ -162,7 +245,7 @@ export class TradingBot {
     // Entries.
     const gate = entryGate({ nowMs, clock, account, state: d, managedCount: Object.keys(d.entries).length, risk: cfg.risk });
     report.gate = gate;
-    if (gate.ok) await this.enter({ nowMs, signals, account, posBySym, ordersBySym, report });
+    if (gate.ok) await this.enter({ nowMs, signals, account, budget, posBySym, ordersBySym, report });
 
     this.state.save();
     return report;
@@ -181,11 +264,24 @@ export class TradingBot {
     return this.assetCache.get(symbol);
   }
 
-  async enter({ nowMs, signals, account, posBySym, ordersBySym, report }) {
+  async enter({ nowMs, signals, account, budget, posBySym, ordersBySym, report }) {
     const cfg = this.config;
     const d = this.state.data;
     let slots = cfg.risk.maxOpenPositions - Object.keys(d.entries).length;
     let tradesLeft = cfg.risk.maxTradesPerDay - d.tradesToday;
+
+    // Money the bot may still put to work: the account's buying power, and
+    // with a budget, whatever of the budget its open positions do not use.
+    const base = budget ? budget.usd : account.equity;
+    let available = account.buyingPower;
+    if (budget) {
+      let used = 0;
+      for (const [sym, e] of Object.entries(d.entries)) {
+        const pos = posBySym.get(sym);
+        used += pos ? pos.qty * pos.avgEntryPrice : e.qty * e.refPrice;
+      }
+      available = Math.min(available, budget.usd - used);
+    }
 
     const eligible = [];
     for (const sig of rankSignals(signals)) {
@@ -227,27 +323,40 @@ export class TradingBot {
       }
       if (!asset.tradable) { this.skip(report, sym, 'the broker marks it not tradable'); continue; }
       if (side === 'sell' && !asset.shortable) { this.skip(report, sym, 'the broker has no shares to borrow for a short'); continue; }
-      const qty = sizePosition({ equity: account.equity, buyingPower: account.buyingPower, price, risk: cfg.risk });
-      if (qty < 1) { this.skip(report, sym, 'the position size rounds down to zero shares'); continue; }
+      const canFraction = cfg.risk.allowFractional && side === 'buy' && asset.fractionable;
+      const { qty, fractional } = sizePosition({ equity: base, buyingPower: available, price, risk: cfg.risk, allowFractional: canFraction });
+      if (!(qty > 0)) {
+        const why = canFraction ? 'the position would be under the broker\'s $1 minimum'
+          : side === 'sell' ? 'a short needs at least one whole share'
+          : !cfg.risk.allowFractional ? 'one share costs more than a position may, and fractional shares are off'
+          : 'one share costs more than a position may, and this stock cannot be bought in fractions';
+        this.skip(report, sym, why);
+        continue;
+      }
       const { stopLoss, takeProfit } = bracketPrices(price, side, cfg.risk);
       const clientOrderId = `nb-${sym}-${nowMs.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       const top = sig.evidence[0];
       try {
-        const order = await this.broker.submitBracketOrder({ symbol: sym, side, qty, takeProfit, stopLoss, clientOrderId });
+        const order = fractional
+          ? await this.broker.submitMarketOrder({ symbol: sym, side, qty, clientOrderId })
+          : await this.broker.submitBracketOrder({ symbol: sym, side, qty, takeProfit, stopLoss, clientOrderId });
         d.entries[sym] = {
           symbol: sym, side, qty, at: nowMs, refPrice: price, stopLoss, takeProfit,
+          exits: fractional ? 'bot' : 'broker', fractional,
           score: sig.score, orderId: order.id, clientOrderId,
           evidence: sig.evidence.slice(0, 5).map((e) => ({ title: e.title, source: e.source, contribution: e.contribution, url: e.url })),
         };
         d.tradesToday++;
         slots--;
         tradesLeft--;
-        account.buyingPower -= qty * price;
+        available -= qty * price;
         this.lastSkip.delete(sym);
         const verb = side === 'buy' ? 'BUY' : 'SHORT';
-        this.log.event('order', `${verb} ${qty} ${sym} near ${price} (stop ${stopLoss}, target ${takeProfit}), score ${sig.score.toFixed(2)}: "${top?.title}" [${top?.source}]`,
-          { symbol: sym, side, qty, price, stopLoss, takeProfit, score: sig.score, orderId: order.id, confirmation: conf.reason, evidence: d.entries[sym].evidence });
-        report.actions.push({ type: 'enter', symbol: sym, side, qty, price, stopLoss, takeProfit, score: sig.score });
+        const size = fractional ? `${qty} (about $${(qty * price).toFixed(2)})` : `${qty}`;
+        const exits = fractional ? `bot watches stop ${stopLoss} and target ${takeProfit}` : `stop ${stopLoss}, target ${takeProfit}`;
+        this.log.event('order', `${verb} ${size} ${sym} near ${price} (${exits}), score ${sig.score.toFixed(2)}: "${top?.title}" [${top?.source}]`,
+          { symbol: sym, side, qty, fractional, price, stopLoss, takeProfit, score: sig.score, orderId: order.id, confirmation: conf.reason, evidence: d.entries[sym].evidence });
+        report.actions.push({ type: 'enter', symbol: sym, side, qty, fractional, price, stopLoss, takeProfit, score: sig.score });
       } catch (err) {
         this.log.error(`order for ${sym} failed: ${err.message}`);
         report.actions.push({ type: 'order-failed', symbol: sym, error: err.message });
@@ -257,12 +366,16 @@ export class TradingBot {
 
   async exit(sym, reason, report) {
     const d = this.state.data;
+    const entry = d.entries[sym];
     try {
       await this.broker.closePosition(sym);
-      this.log.event('exit', `closing ${sym}: ${reason}`, { symbol: sym, reason, entry: d.entries[sym] });
+      // Close at market: the P&L shown a moment ago is a close estimate.
+      const pnl = this.config.dryRun ? 0 : entry?.lastUnrealizedPl ?? 0;
+      d.realizedToday += pnl;
+      this.log.event('exit', `closing ${sym}: ${reason} (P&L about $${pnl.toFixed(2)})`, { symbol: sym, reason, entry, pnl });
       delete d.entries[sym];
       d.lastExitAt[sym] = this.now();
-      report.actions.push({ type: 'exit', symbol: sym, reason });
+      report.actions.push({ type: 'exit', symbol: sym, reason, pnl });
     } catch (err) {
       this.log.error(`could not close ${sym}: ${err.message}`);
       report.actions.push({ type: 'exit-failed', symbol: sym, error: err.message });
@@ -279,7 +392,8 @@ export class TradingBot {
     const top = report.signals.slice(0, 4).map((s) => `${s.symbol} ${s.score >= 0 ? '+' : ''}${s.score.toFixed(2)}`).join(', ') || 'none';
     const market = report.marketOpen == null ? 'signals only' : report.marketOpen ? 'market open' : 'market closed';
     const gate = report.gate ? `; ${report.gate.ok ? 'entries allowed' : report.gate.reason}` : '';
-    return `${market}; ${report.newArticles} new article(s); signals: ${top}${gate}`;
+    const pnl = report.dailyPnlPct != null ? `; ${report.budget ? 'bot' : 'account'} ${report.dailyPnlPct >= 0 ? '+' : ''}${report.dailyPnlPct.toFixed(2)}% today` : '';
+    return `${market}; ${report.newArticles} new article(s); signals: ${top}${gate}${pnl}`;
   }
 
   async run({ signal } = {}) {

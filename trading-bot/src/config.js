@@ -114,6 +114,16 @@ export const DEFAULTS = {
     noEntryMinutesBeforeClose: 30,
     flattenMinutesBeforeClose: 10,
     pdtGuard: true, // honour pattern-day-trader counters if the broker reports them
+    // Trade with only part of the account. null uses the whole account.
+    // { amount: 100, currency: 'GBP' } sizes every trade, and the daily loss
+    // limit, as if the account held 100 pounds, converted to dollars at the
+    // broker's rate each day. Set fxRate to fix the rate yourself. The
+    // BOT_CAPITAL environment variable ("100 GBP", "£100") sets the same thing.
+    capital: null,
+    // Buy fractional shares when a whole share costs more than a position may.
+    // The broker cannot attach a stop and target to a fractional order, so
+    // the bot watches them itself, once per poll.
+    allowFractional: true,
   },
 };
 
@@ -153,6 +163,11 @@ export function validate(cfg) {
   check(Number.isInteger(r.maxOpenPositions) && r.maxOpenPositions >= 1, 'risk.maxOpenPositions must be a whole number of at least 1');
   check(r.flattenMinutesBeforeClose < r.noEntryMinutesBeforeClose,
     'risk.flattenMinutesBeforeClose must be smaller than risk.noEntryMinutesBeforeClose');
+  if (r.capital != null) {
+    check(Number.isFinite(r.capital.amount) && r.capital.amount > 0, `risk.capital.amount must be a positive number, got ${r.capital.amount}`);
+    check(/^[A-Z]{3}$/.test(r.capital.currency || ''), `risk.capital.currency must be a three-letter code such as GBP, got ${r.capital.currency}`);
+    check(r.capital.fxRate == null || (Number.isFinite(r.capital.fxRate) && r.capital.fxRate > 0), 'risk.capital.fxRate must be a positive number');
+  }
   const s = cfg.signal;
   check(s.entryThreshold > 0 && s.exitThreshold > 0, 'signal thresholds must be positive');
   check(['low', 'medium', 'high', 'xhigh', 'max'].includes(cfg.analysis.effort), `analysis.effort is not a valid level: ${cfg.analysis.effort}`);
@@ -185,6 +200,7 @@ export function loadConfig({ env = process.env, configPath, overrides = {} } = {
     cfg = merge(cfg, parsed);
   }
   if (env.TRADING_MODE) cfg.mode = env.TRADING_MODE.trim().toLowerCase();
+  if (env.BOT_CAPITAL) cfg.risk.capital = parseCapital(env.BOT_CAPITAL);
   cfg = merge(cfg, overrides);
 
   cfg.secrets = {
@@ -203,6 +219,16 @@ export function loadConfig({ env = process.env, configPath, overrides = {} } = {
     );
   }
   return cfg;
+}
+
+const SYMBOL_CURRENCY = { '£': 'GBP', '$': 'USD', '€': 'EUR' };
+
+/** "100 GBP", "£100", "250" (dollars) -> { amount, currency } */
+export function parseCapital(text) {
+  const m = String(text).trim().match(/^([£$€])?\s*([\d,]+(?:\.\d+)?)\s*([A-Za-z]{3})?$/);
+  if (!m) throw new ConfigError(`BOT_CAPITAL should look like "100 GBP" or "£100", got "${text}"`);
+  const currency = (m[3] || SYMBOL_CURRENCY[m[1]] || 'USD').toUpperCase();
+  return { amount: Number(m[2].replace(/,/g, '')), currency };
 }
 
 export function hasBrokerKeys(cfg) {

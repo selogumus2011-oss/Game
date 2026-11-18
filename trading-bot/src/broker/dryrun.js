@@ -19,6 +19,13 @@ export class DryRunBroker {
   getNews(q) { return this.inner.getNews(q); }
   getBars(s, q) { return this.inner.getBars(s, q); }
   getLatestPrices(s) { return this.inner.getLatestPrices(s); }
+  getFxRate(pair) { return this.inner.getFxRate(pair); }
+  getClosedOrders(q) { return this.inner.getClosedOrders(q); }
+
+  async submitMarketOrder(o) {
+    this.log.event('dry-run', `[dry run] would ${o.side} ${o.qty} ${o.symbol} at market (fractional; the bot watches the stop and target)`, o);
+    return { id: `dry-${o.clientOrderId}`, clientOrderId: o.clientOrderId, symbol: o.symbol, side: o.side, qty: o.qty, status: 'dry_run' };
+  }
 
   async submitBracketOrder(o) {
     this.log.event('dry-run', `[dry run] would ${o.side} ${o.qty} ${o.symbol}, stop ${o.stopLoss}, target ${o.takeProfit}`, o);

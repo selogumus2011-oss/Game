@@ -62,7 +62,8 @@ Every minute (every five while the market is shut):
 - **Your other holdings are left alone.** The bot only sells or closes positions
   it opened itself. It will not trade a symbol you already hold.
 - **Daily loss limit.** If the account falls 2% on the day, the bot stops
-  opening trades and closes its own positions until the next day.
+  opening trades and closes its own positions until the next day. With a
+  trading budget, the 2% is measured on the bot's own P&L against the budget.
 - **Limits.** At most four positions and ten trades a day. No entries in the
   first five minutes or the last thirty. A one-hour cooldown applies before
   re-entering a symbol. There is a $5 minimum share price, and no shorting
@@ -128,6 +129,34 @@ To close *every* position in the account, including ones the bot did not open:
 ```bash
 node src/index.js flatten --all --yes
 ```
+
+## Trading a small amount
+
+A paper account starts with $100,000 of pretend money. To have the bot behave
+as if it had a small pot, set a budget in `.env`:
+
+```
+BOT_CAPITAL=£100
+```
+
+The bot converts it to dollars at the broker's live rate once a day. Every
+position, the total it holds at once, and the daily loss limit are then sized
+from the budget, and the rest of the account is ignored. If the rate cannot be
+fetched, it stops trading rather than guess. Give the rate yourself with
+`risk.capital.fxRate` in `config.json` if that keeps happening.
+
+With £100, the default 10% position limit is about £10. That is less than one
+share of most large companies, so the bot buys **fractional shares**. The
+broker cannot attach a stop and target to a fractional order, so the bot
+watches them itself, once a minute. That has two consequences:
+
+- A fast fall can go past the stop before the bot's next check.
+- While the bot is not running, a fractional position has no stop at all. If
+  you stop it during the day and will not restart it, run `npm run flatten`.
+
+A position of about £10 also means gains and losses are pennies. That is fine
+for testing whether the signals work. To let each trade use more of the budget,
+raise `risk.maxPositionPct` in `config.json`.
 
 ## Configuration
 

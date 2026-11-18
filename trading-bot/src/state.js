@@ -13,6 +13,8 @@ export function emptyState() {
     version: 1,
     day: null, // New York date the counters below belong to
     tradesToday: 0,
+    realizedToday: 0, // the bot's closed-trade profit and loss today, in dollars
+    budget: null, // { day, amount, currency, rate, usd } when risk.capital is set
     halted: null, // { reason, at } once the daily loss limit trips
     lastPollAt: null,
     seen: {}, // article key -> first-seen ms

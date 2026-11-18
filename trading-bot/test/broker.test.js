@@ -100,3 +100,20 @@ test('dry run reads through and writes nothing', async () => {
   assert.equal(o.status, 'dry_run');
   assert.deepEqual(calls.map((c) => c.method), ['GET']);
 });
+
+test('fractional market orders, fills and exchange rates use the right endpoints', async () => {
+  const { calls, broker } = fakeAlpaca((c) => {
+    if (c.method === 'POST') return [200, { id: 'f1', client_order_id: c.body.client_order_id, symbol: 'AAPL', side: 'buy', qty: c.body.qty, status: 'accepted' }];
+    if (c.path === '/v1beta1/forex/latest/rates') return [200, { rates: { GBPUSD: { bp: 1.27, ap: 1.29, mp: 1.28, t: '2026-11-18T10:00:00Z' } } }];
+    return [200, [{ id: 'x', client_order_id: 'c', symbol: 'AAPL', side: 'sell', qty: '0.05', filled_qty: '0.05', filled_avg_price: '251.5', status: 'filled' }]];
+  });
+  await broker.submitMarketOrder({ symbol: 'AAPL', side: 'buy', qty: 0.0508, clientOrderId: 'c1' });
+  assert.deepEqual(calls[0].body, { symbol: 'AAPL', qty: '0.0508', side: 'buy', type: 'market', time_in_force: 'day', client_order_id: 'c1' });
+  assert.equal(await broker.getFxRate('GBPUSD'), 1.28);
+  assert.equal(calls[1].host, 'data.alpaca.markets');
+  assert.equal(calls[1].query.currency_pairs, 'GBPUSD');
+  const fills = await broker.getClosedOrders({ symbol: 'AAPL', after: Date.UTC(2026, 10, 18, 15) });
+  assert.equal(fills[0].filledAvgPrice, 251.5);
+  assert.equal(calls[2].query.status, 'closed');
+  assert.equal(calls[2].query.after, '2026-11-18T15:00:00.000Z');
+});

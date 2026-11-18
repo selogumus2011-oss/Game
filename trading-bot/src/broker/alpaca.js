@@ -143,6 +143,21 @@ export class AlpacaBroker {
 
   // --- orders ------------------------------------------------------------------
 
+  /** Submit an order; on an ambiguous failure, check whether it went in anyway. */
+  async postOrder(body) {
+    try {
+      return normalizeOrder(await this.trading('POST', '/v2/orders', { body }));
+    } catch (err) {
+      // A timeout or 5xx leaves us unsure whether the order went in. The
+      // client order id is unique, so ask before reporting failure.
+      if (err.status === 0 || err.status >= 500) {
+        const existing = await this.getOrderByClientId(body.client_order_id).catch(() => null);
+        if (existing) return existing;
+      }
+      throw err;
+    }
+  }
+
   /**
    * A market entry with an attached take-profit limit and stop-loss stop.
    * Both exits live at the broker, so they still protect the position if the
@@ -150,7 +165,7 @@ export class AlpacaBroker {
    */
   async submitBracketOrder({ symbol, side, qty, takeProfit, stopLoss, clientOrderId }) {
     if (!Number.isInteger(qty) || qty < 1) throw new Error(`bracket orders need a whole number of shares, got ${qty}`);
-    const body = {
+    return this.postOrder({
       symbol,
       qty: String(qty),
       side,
@@ -160,18 +175,28 @@ export class AlpacaBroker {
       take_profit: { limit_price: String(takeProfit) },
       stop_loss: { stop_price: String(stopLoss) },
       client_order_id: clientOrderId,
-    };
-    try {
-      return normalizeOrder(await this.trading('POST', '/v2/orders', { body }));
-    } catch (err) {
-      // A timeout or 5xx leaves us unsure whether the order went in. The
-      // client order id is unique, so ask before reporting failure.
-      if (err.status === 0 || err.status >= 500) {
-        const existing = await this.getOrderByClientId(clientOrderId).catch(() => null);
-        if (existing) return existing;
-      }
-      throw err;
-    }
+    });
+  }
+
+  /** A plain market order, used for fractional quantities (day orders only). */
+  async submitMarketOrder({ symbol, side, qty, clientOrderId }) {
+    if (!(qty > 0)) throw new Error(`order quantity must be positive, got ${qty}`);
+    return this.postOrder({
+      symbol,
+      qty: formatQty(qty),
+      side,
+      type: 'market',
+      time_in_force: 'day',
+      client_order_id: clientOrderId,
+    });
+  }
+
+  /** Filled and cancelled orders for a symbol since `after`, oldest first. */
+  async getClosedOrders({ symbol, after }) {
+    const list = await this.trading('GET', '/v2/orders', {
+      query: { status: 'closed', symbols: symbol, after: new Date(after).toISOString(), direction: 'asc', limit: 100, nested: false },
+    });
+    return list.map(normalizeOrder);
   }
 
   async cancelOrder(id) {
@@ -242,10 +267,24 @@ export class AlpacaBroker {
     return out;
   }
 
+  /** Mid-market rate for a pair such as "GBPUSD": dollars per pound. */
+  async getFxRate(pair) {
+    const res = await this.data('/v1beta1/forex/latest/rates', { currency_pairs: pair });
+    const r = res?.rates?.[pair];
+    const mid = r?.mp ?? (r?.bp > 0 && r?.ap > 0 ? (r.bp + r.ap) / 2 : null);
+    if (!(mid > 0)) throw new Error(`the broker returned no ${pair} rate`);
+    return mid;
+  }
+
   async getLatestPrices(symbols) {
     const res = await this.data('/v2/stocks/trades/latest', { symbols: symbols.join(','), feed: this.feed });
     return Object.fromEntries(Object.entries(res.trades || {}).map(([s, t]) => [s, t.p]));
   }
+}
+
+/** Up to six decimal places, never in exponent notation. */
+export function formatQty(qty) {
+  return qty.toFixed(6).replace(/\.?0+$/, '');
 }
 
 function normalizeOrder(o) {
@@ -256,6 +295,7 @@ function normalizeOrder(o) {
     side: o.side,
     qty: num(o.qty),
     filledQty: num(o.filled_qty),
+    filledAvgPrice: num(o.filled_avg_price),
     type: o.type ?? o.order_type,
     status: o.status,
     orderClass: o.order_class,

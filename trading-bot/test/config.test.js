@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadConfig, merge, LIVE_CONFIRM_PHRASE } from '../src/config.js';
+import { loadConfig, merge, parseCapital, LIVE_CONFIRM_PHRASE } from '../src/config.js';
 
 const load = (env, overrides) => loadConfig({ env, configPath: false, overrides });
 
@@ -37,4 +37,16 @@ test('secrets come from the environment', () => {
   const cfg = load({ ALPACA_API_KEY_ID: 'a', ALPACA_API_SECRET_KEY: 'b', ANTHROPIC_API_KEY: 'c' });
   assert.equal(cfg.secrets.alpacaKeyId, 'a');
   assert.equal(cfg.secrets.hasAnthropicCredentials, true);
+});
+
+test('a trading budget can be given in pounds', () => {
+  assert.deepEqual(parseCapital('£100'), { amount: 100, currency: 'GBP' });
+  assert.deepEqual(parseCapital('100 GBP'), { amount: 100, currency: 'GBP' });
+  assert.deepEqual(parseCapital('100 gbp'), { amount: 100, currency: 'GBP' });
+  assert.deepEqual(parseCapital('2,500'), { amount: 2500, currency: 'USD' });
+  assert.throws(() => parseCapital('a hundred quid'), /BOT_CAPITAL/);
+  assert.deepEqual(load({ BOT_CAPITAL: '£100' }).risk.capital, { amount: 100, currency: 'GBP' });
+  assert.equal(load({}).risk.capital, null);
+  assert.throws(() => load({}, { risk: { capital: { amount: -5, currency: 'GBP' } } }), /capital.amount/);
+  assert.throws(() => load({}, { risk: { capital: { amount: 5, currency: 'pounds' } } }), /currency/);
 });

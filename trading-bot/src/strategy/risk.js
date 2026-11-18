@@ -8,17 +8,28 @@ export function roundPrice(p) {
 }
 
 /**
- * Shares to buy so that hitting the stop loses `riskPerTradePct` of equity,
- * capped by the per-position limit and buying power.
+ * Shares to buy so that hitting the stop loses `riskPerTradePct` of `equity`,
+ * capped by the per-position limit and the money available. Whole shares
+ * when at least one fits; otherwise a fractional amount if allowed, as long
+ * as it is worth at least $1 (the broker's minimum fractional order).
+ * @returns {{qty: number, fractional: boolean}}
  */
-export function sizePosition({ equity, buyingPower, price, risk }) {
-  if (!(price > 0) || !(equity > 0)) return 0;
+export function sizePosition({ equity, buyingPower, price, risk, allowFractional = false }) {
+  const none = { qty: 0, fractional: false };
+  if (!(price > 0) || !(equity > 0)) return none;
   const riskDollars = equity * (risk.riskPerTradePct / 100);
   const perShareRisk = price * (risk.stopLossPct / 100);
-  const byRisk = Math.floor(riskDollars / perShareRisk);
-  const byPosition = Math.floor((equity * (risk.maxPositionPct / 100)) / price);
-  const byBuyingPower = Math.floor((Math.max(0, buyingPower) * 0.95) / price);
-  return Math.max(0, Math.min(byRisk, byPosition, byBuyingPower));
+  const raw = Math.min(
+    riskDollars / perShareRisk,
+    (equity * (risk.maxPositionPct / 100)) / price,
+    (Math.max(0, buyingPower) * 0.95) / price,
+  );
+  const whole = Math.floor(raw);
+  if (whole >= 1) return { qty: whole, fractional: false };
+  if (!allowFractional) return none;
+  const qty = Math.floor(raw * 1e6) / 1e6;
+  if (qty * price < 1) return none;
+  return { qty, fractional: true };
 }
 
 /** Stop-loss and take-profit prices for a bracket order. */

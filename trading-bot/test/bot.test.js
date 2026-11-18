@@ -226,3 +226,114 @@ test('signals-only mode (no broker) still scores the news', async () => {
   assert.equal(r.signals[0].symbol, 'AAPL');
   assert.ok(r.signals[0].score > 0.6);
 });
+
+// --- trading a small budget ------------------------------------------------
+
+function budgetSetup({ judge = bullish, capital = { amount: 100, currency: 'GBP' }, risk = {} } = {}) {
+  const ctx = makeBot({ judge, config: testConfig({ risk: { capital, ...risk } }) });
+  ctx.broker.fxRates.GBPUSD = 1.27;
+  ctx.broker.setBars('AAPL', risingBars(ctx.now(), { start: 248, last: 250 }));
+  ctx.broker.dailyBars.AAPL = [{ t: OPEN - 24 * 60 * MIN, o: 247, h: 249, l: 246, c: 248, v: 1e6 }];
+  return ctx;
+}
+
+test('with a £100 budget it buys a fractional share sized to the budget, not the account', async () => {
+  const ctx = budgetSetup();
+  news(ctx, 'Apple raises full-year guidance');
+  const r = await ctx.bot.tick();
+  assert.equal(r.budget.usd, 127);
+  const o = ctx.broker.submitted[0];
+  assert.equal(o.bracket, false, 'fractional orders carry no bracket');
+  // 10% of $127 at $250 = 0.0508 shares, about $12.70 of a $100,000 account.
+  assert.equal(o.qty, 0.0508);
+  const entry = ctx.state.data.entries.AAPL;
+  assert.equal(entry.exits, 'bot');
+  assert.equal(entry.stopLoss, 246.25);
+  assert.ok(ctx.log.events.some((e) => e.type === 'budget' && e.message.includes('100 GBP = $127')));
+});
+
+test('the bot sells a fractional position itself when the stop is hit', async () => {
+  const ctx = budgetSetup();
+  news(ctx, 'Apple raises full-year guidance');
+  await ctx.bot.tick();
+  ctx.broker.pushPrice('AAPL', 246);
+  assert.ok(ctx.broker.positions.has('AAPL'), 'the broker holds no stop for it');
+  ctx.now.advance(MIN);
+  const r = await ctx.bot.tick();
+  const exit = r.actions.find((a) => a.type === 'exit');
+  assert.match(exit.reason, /reached the stop/);
+  assert.equal(ctx.broker.positions.size, 0);
+  assert.ok(ctx.state.data.realizedToday < 0);
+});
+
+test('the bot takes profit on a fractional position at the target', async () => {
+  const ctx = budgetSetup();
+  news(ctx, 'Apple raises full-year guidance');
+  await ctx.bot.tick();
+  ctx.broker.pushPrice('AAPL', 258);
+  ctx.now.advance(MIN);
+  const r = await ctx.bot.tick();
+  assert.match(r.actions.find((a) => a.type === 'exit').reason, /reached the target/);
+  assert.ok(ctx.state.data.realizedToday > 0);
+});
+
+test('the daily loss limit is measured on the budget, not the whole account', async () => {
+  const ctx = budgetSetup({
+    capital: { amount: 100, currency: 'USD' },
+    risk: { maxPositionPct: 100, riskPerTradePct: 5, stopLossPct: 5, takeProfitPct: 10 },
+  });
+  ctx.broker.setBars('AAPL', risingBars(ctx.now(), { start: 49, last: 50 }));
+  ctx.broker.dailyBars.AAPL = [{ t: OPEN - 24 * 60 * MIN, o: 49, h: 49, l: 49, c: 49, v: 1e6 }];
+  news(ctx, 'Apple raises full-year guidance');
+  await ctx.bot.tick();
+  assert.equal(ctx.broker.submitted[0].qty, 1, 'one whole $50 share, with a bracket at $47.50');
+  ctx.broker.pushPrice('AAPL', 48.9); // down $1.10: 1.1% of the budget
+  ctx.now.advance(MIN);
+  await ctx.bot.tick();
+  assert.equal(ctx.state.data.halted, null);
+  ctx.broker.pushPrice('AAPL', 47.9); // down $2.10: 2.1% of the budget, 0.002% of the account
+  ctx.now.advance(MIN);
+  await ctx.bot.tick();
+  assert.match(ctx.state.data.halted?.reason ?? '', /the bot is down 2.10%/);
+  assert.equal(ctx.broker.positions.size, 0, 'and its position is closed');
+  assert.ok(Math.abs(ctx.state.data.realizedToday + 2.1) < 1e-9);
+});
+
+test('a bracket exit is booked at its fill price', async () => {
+  const ctx = budgetSetup({ capital: { amount: 100, currency: 'USD' }, risk: { maxPositionPct: 100, riskPerTradePct: 5 } });
+  ctx.broker.setBars('AAPL', risingBars(ctx.now(), { start: 49, last: 50 }));
+  ctx.broker.dailyBars.AAPL = [{ t: OPEN - 24 * 60 * MIN, o: 49, h: 49, l: 49, c: 49, v: 1e6 }];
+  news(ctx, 'Apple raises full-year guidance');
+  await ctx.bot.tick();
+  ctx.broker.pushPrice('AAPL', 52); // through the $51.50 target
+  ctx.now.advance(MIN);
+  const r = await ctx.bot.tick();
+  const closed = r.actions.find((a) => a.type === 'closed-by-broker');
+  assert.ok(Math.abs(closed.pnl - 1.5) < 1e-9, `got ${closed.pnl}`);
+  assert.ok(Math.abs(ctx.state.data.realizedToday - 1.5) < 1e-9);
+});
+
+test('the budget caps total exposure across positions', async () => {
+  const ctx = budgetSetup({ capital: { amount: 100, currency: 'USD' }, risk: { maxPositionPct: 60, riskPerTradePct: 5 } });
+  for (const [sym, name] of [['MSFT', 'Microsoft'], ['NVDA', 'Nvidia']]) {
+    ctx.broker.setBars(sym, risingBars(ctx.now(), { start: 100, last: 101 }));
+    news(ctx, `${name} raises guidance`, [sym]);
+  }
+  await ctx.bot.tick();
+  const spent = ctx.broker.submitted.reduce((s, o) => s + o.qty * o.price, 0);
+  assert.equal(ctx.broker.submitted.length, 2);
+  assert.ok(spent <= 100, `spent ${spent}`);
+});
+
+test('without a rate it refuses to guess the budget', async () => {
+  const ctx = budgetSetup();
+  delete ctx.broker.fxRates.GBPUSD;
+  news(ctx, 'Apple raises full-year guidance');
+  await assert.rejects(ctx.bot.tick(), /exchange rate/);
+  assert.equal(ctx.broker.submitted.length, 0);
+  const fixed = budgetSetup({ capital: { amount: 100, currency: 'GBP', fxRate: 1.3 } });
+  delete fixed.broker.fxRates.GBPUSD;
+  news(fixed, 'Apple raises full-year guidance');
+  const r = await fixed.bot.tick();
+  assert.equal(r.budget.usd, 130);
+});

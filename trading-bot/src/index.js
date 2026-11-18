@@ -124,6 +124,10 @@ async function main(argv) {
         const account = await broker.getAccount();
         log.info(`mode: ${broker.mode}${config.mode === 'live' && !dryRun ? ' (REAL MONEY)' : ''}; equity ${money(account.equity)}; analysis: ${analyzer.method}`);
         log.info(`watchlist: ${bot.symbols.join(' ')}; news sources: ${collector.sources().active.map((s) => s.id).join(', ')}`);
+        const cap = config.risk.capital;
+        log.info(cap
+          ? `trading budget: ${cap.amount} ${cap.currency} of the account, not the whole balance${config.risk.allowFractional ? '; fractional shares on' : ''}`
+          : 'trading budget: the whole account (set BOT_CAPITAL to use less)');
         if (!config.secrets.hasAnthropicCredentials && config.analysis.provider === 'auto') {
           log.warn('ANTHROPIC_API_KEY is not set: using the keyword scorer, which rarely reaches the entry threshold');
         }
@@ -136,7 +140,9 @@ async function main(argv) {
         const controller = new AbortController();
         const stop = () => {
           if (controller.signal.aborted) process.exit(130);
+          const frac = Object.values(state.data.entries).filter((e) => e.exits === 'bot').map((e) => e.symbol);
           log.info('stopping after the current tick (press Ctrl+C again to quit now). Open bracket orders stay in place at the broker.');
+          if (frac.length) log.warn(`${frac.join(', ')}: fractional, so no stop at the broker while the bot is off. Run "npm run flatten" if you will not restart it today.`);
           controller.abort();
         };
         process.on('SIGINT', stop);
@@ -168,12 +174,18 @@ async function main(argv) {
       console.log(`Market: ${clock.isOpen ? `open, closes ${new Date(clock.nextClose).toLocaleString()}` : `closed, opens ${new Date(clock.nextOpen).toLocaleString()}`}`);
       console.log(`Equity ${money(account.equity)}, buying power ${money(account.buyingPower)}, today ${dailyPnlPct(account).toFixed(2)}%`);
       if (account.daytradeCount != null) console.log(`Day trades in the last 5 days: ${account.daytradeCount}`);
+      const b = state.data.budget;
+      if (config.risk.capital) {
+        const cap = config.risk.capital;
+        console.log(`Bot budget: ${cap.amount} ${cap.currency}${b?.usd ? ` (about $${b.usd} at ${b.rate})` : ''}; closed-trade P&L today $${(state.data.realizedToday || 0).toFixed(2)}`);
+      }
       console.log(`Bot trades today: ${state.data.day === null ? 0 : state.data.tradesToday}${state.data.halted ? `; HALTED: ${state.data.halted.reason}` : ''}`);
       const managed = new Set(Object.keys(state.data.entries));
       console.log('\nPositions');
       if (positions.length === 0) console.log('  none');
       for (const p of positions) {
-        const tag = managed.has(p.symbol) ? 'bot' : 'yours, untouched';
+        const e = state.data.entries[p.symbol];
+        const tag = !e ? 'yours, untouched' : e.exits === 'bot' ? `bot; it watches stop ${e.stopLoss} and target ${e.takeProfit}` : 'bot; bracket at the broker';
         console.log(`  ${p.symbol.padEnd(6)} ${p.side} ${p.qty} @ ${p.avgEntryPrice} now ${p.currentPrice} P/L ${money(p.unrealizedPl)} (${tag})`);
       }
       console.log('\nOpen orders');

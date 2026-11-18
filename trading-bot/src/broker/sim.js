@@ -15,6 +15,8 @@ export class SimBroker {
     this.assets = {};
     this.submitted = [];
     this.closed = [];
+    this.fills = []; // filled orders, as getClosedOrders reports them
+    this.fxRates = {};
     this.accountFlags = { tradingBlocked: false, accountBlocked: false, shortingEnabled: true, daytradeCount: null };
     this.clock = { isOpen: true, nextOpen: now() + 86_400_000, nextClose: now() + 3 * 3_600_000 };
     this.seq = 0;
@@ -60,6 +62,7 @@ export class SimBroker {
     this.openOrders = this.openOrders.filter((o) => o.symbol !== symbol);
     const rec = { symbol, price, reason, qty: pos.qty, side: pos.side, at: this.now() };
     this.closed.push(rec);
+    this.fills.push({ id: `fill-${++this.seq}`, symbol, side: pos.side === 'long' ? 'sell' : 'buy', filledQty: pos.qty, filledAvgPrice: price, status: 'filled', createdAt: this.now() });
     return rec;
   }
 
@@ -82,7 +85,8 @@ export class SimBroker {
   async getPositions() {
     return [...this.positions.values()].map((p) => ({
       symbol: p.symbol, qty: p.qty, side: p.side, avgEntryPrice: p.avgEntryPrice,
-      currentPrice: this.price(p.symbol), marketValue: p.qty * this.price(p.symbol), unrealizedPl: null,
+      currentPrice: this.price(p.symbol), marketValue: p.qty * this.price(p.symbol),
+      unrealizedPl: (this.price(p.symbol) - p.avgEntryPrice) * p.qty * (p.side === 'long' ? 1 : -1),
     }));
   }
 
@@ -107,14 +111,34 @@ export class SimBroker {
     return Object.fromEntries(symbols.map((s) => [s, this.price(s)]));
   }
 
-  async submitBracketOrder(o) {
+  async getFxRate(pair) {
+    if (!(this.fxRates[pair] > 0)) throw new Error(`no ${pair} rate`);
+    return this.fxRates[pair];
+  }
+
+  async getClosedOrders({ symbol, after }) {
+    return this.fills.filter((f) => f.symbol === symbol && f.createdAt >= after);
+  }
+
+  fill(o, bracket) {
     const price = this.price(o.symbol);
     if (price == null) throw new Error(`no price for ${o.symbol}`);
     const id = `sim-${++this.seq}`;
-    this.submitted.push({ ...o, id, price, at: this.now() });
+    this.submitted.push({ ...o, id, price, at: this.now(), bracket: Boolean(bracket) });
+    this.fills.push({ id, clientOrderId: o.clientOrderId, symbol: o.symbol, side: o.side, filledQty: o.qty, filledAvgPrice: price, status: 'filled', createdAt: this.now() });
     const side = o.side === 'buy' ? 'long' : 'short';
     this.cash += side === 'long' ? -o.qty * price : o.qty * price;
-    this.positions.set(o.symbol, { symbol: o.symbol, qty: o.qty, side, avgEntryPrice: price, bracket: { stopLoss: o.stopLoss, takeProfit: o.takeProfit } });
+    this.positions.set(o.symbol, { symbol: o.symbol, qty: o.qty, side, avgEntryPrice: price, bracket });
+    return { id, price };
+  }
+
+  async submitMarketOrder(o) {
+    const { id } = this.fill(o, null);
+    return { id, clientOrderId: o.clientOrderId, symbol: o.symbol, side: o.side, qty: o.qty, status: 'filled' };
+  }
+
+  async submitBracketOrder(o) {
+    const { id } = this.fill(o, { stopLoss: o.stopLoss, takeProfit: o.takeProfit });
     const exitSide = o.side === 'buy' ? 'sell' : 'buy';
     this.openOrders.push(
       { id: `${id}-tp`, symbol: o.symbol, side: exitSide, qty: o.qty, type: 'limit', status: 'new', orderClass: 'bracket' },
