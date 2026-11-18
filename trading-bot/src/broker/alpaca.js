@@ -74,7 +74,9 @@ export class AlpacaBroker {
         try { data = JSON.parse(text); } catch { data = text; }
       }
       if (!res.ok) {
-        const msg = (data && typeof data === 'object' && data.message) || (typeof data === 'string' && data) || `HTTP ${res.status}`;
+        // Error pages from the web server are HTML; their title is enough.
+        const page = typeof data === 'string' ? (data.match(/<title>([^<]*)<\/title>/i)?.[1] ?? data.slice(0, 200)).trim() : null;
+        const msg = (data && typeof data === 'object' && data.message) || page || `HTTP ${res.status}`;
         throw new AlpacaError(res.status, `Alpaca ${method} ${url.pathname} failed (${res.status}): ${msg}`, data);
       }
       return data;

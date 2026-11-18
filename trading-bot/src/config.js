@@ -50,7 +50,7 @@ export const DEFAULTS = {
         url: 'https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&region=US&lang=en-US',
       },
       {
-        id: 'globenewswire', type: 'rss', name: 'GlobeNewswire (public companies)', trust: 0.7, enabled: true,
+        id: 'globenewswire', type: 'rss', name: 'GlobeNewswire (public companies)', trust: 0.7, enabled: false, // the site refuses automated readers (Nov 2026)
         url: 'https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies',
       },
       {
